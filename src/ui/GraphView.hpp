@@ -1,0 +1,112 @@
+#pragma once
+// The graph paper: grid/axes/labels, curve sampling + caching, points of interest, hover/trace,
+// pan/zoom, zoom buttons and the graph-settings popover.
+#include "graph/Poi.hpp"
+#include "graph/Sampler.hpp"
+#include "graph/Viewport.hpp"
+#include "render/Batch2D.hpp"
+#include "render/Renderer.hpp"
+#include "ui/ExpressionList.hpp"
+#include "ui/RowModel.hpp"
+
+#include <functional>
+#include <unordered_map>
+
+namespace calc {
+
+struct GraphSettings {
+    bool grid = true;
+    bool minorGrid = true;
+    bool axisNumbers = true;
+    bool xAxis = true, yAxis = true;
+    bool degrees = false;
+};
+
+enum class CursorKind { Arrow, IBeam, Pointer, Grab, Grabbing };
+
+// One drawable thing on the graph: an expression row, or one column of a table.
+struct GraphItem {
+    const RowAnalysis* an;
+    Style style;
+    uint64_t key;               // cache key base: unique per (row, column); pieces add their index
+    int row;                    // expression-list row (selection / highlight)
+    bool connectPoints = false; // table columns: points may be joined by lines
+};
+
+struct ImageItem {
+    int texture = -1;
+    double cx = 0, cy = 0, w = 0, h = 0;  // world units
+    float opacity = 1;
+    int row = -1;
+};
+
+class GraphView {
+public:
+    Viewport vp;
+    Rect area;
+    GraphSettings settings;
+    std::function<void(int row)> onSelectRow;     // clicked a curve (-1: clicked empty paper)
+    std::function<void()> onSettingsChanged;      // degrees toggled etc. (re-analyse)
+
+    void setArea(const Rect& r);
+    void resetView();
+    bool viewIsDefault() const;
+    void zoomBy(double factor);
+
+    // Samples whatever is stale (in parallel) and fills `out` with this frame's curves.
+    std::vector<ImageItem> images;   // set by the app before buildFrame
+    void buildFrame(const std::vector<GraphItem>& items, int selected, GraphFrame& out);
+    void drawUnder(Batch2D& b) const;
+    void drawOver(Batch2D& b, const std::vector<GraphItem>& items, int selected);
+    void drawControls(Batch2D& b) const;
+
+    bool mouseDown(float x, float y, int clicks, Mods m, const std::vector<GraphItem>& items);
+    bool mouseDragged(float x, float y, const std::vector<GraphItem>& items);
+    bool mouseUp(float x, float y);
+    bool mouseMoved(float x, float y, const std::vector<GraphItem>& items);
+    bool mouseExited();
+    bool scroll(float x, float y, float dx, float dy, bool precise);
+    bool magnify(float x, float y, float amount);
+    CursorKind cursorAt(float x, float y) const;
+    bool settingsOpen() const { return m_settingsOpen; }
+    void closeSettings() { m_settingsOpen = false; }
+
+    size_t cachedCurveCount() const { return m_cache.size(); }
+    double lastSampleMs() const { return m_lastSampleMs; }
+
+private:
+    enum class Button { None, Wrench, ZoomIn, ZoomOut, Home };
+    struct Trace {
+        int item = -1, piece = -1;
+        double x = 0, y = 0;
+        bool active = false;
+    };
+    struct PoiCache {
+        uint32_t rowId = 0;
+        uint64_t hash = 0;
+        Viewport vp;
+        std::vector<Poi> pois;
+    };
+
+    std::unordered_map<uint64_t, CurvePoints> m_cache;
+    bool m_initialised = false;
+    Button m_hoverButton = Button::None, m_pressButton = Button::None;
+    int m_hoverSetting = -1;
+    bool m_settingsOpen = false;
+    bool m_panning = false;
+    float m_lastX = 0, m_lastY = 0, m_downX = 0, m_downY = 0;
+    int m_hoverRow = -1;
+    Trace m_trace;
+    PoiCache m_poi;
+    int m_hoverPoi = -1;
+    double m_lastSampleMs = 0;
+
+    Rect buttonRect(Button b) const;
+    Button buttonAt(float x, float y) const;
+    Rect settingsRect() const;
+    int settingAt(float x, float y) const;
+    bool pickCurve(float x, float y, const std::vector<GraphItem>& items, Trace& out, int onlyItem = -1) const;
+    void updatePois(const std::vector<GraphItem>& items, int selected);
+};
+
+} // namespace calc

@@ -1,0 +1,37 @@
+{
+  "env": {
+    "DEVELOPER_DIR": "/Applications/Xcode.app/Contents/Developer"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(scripts/build.sh:*)",
+      "Bash(scripts/test.sh:*)",
+      "Bash(scripts/run.sh:*)",
+      "Bash(scripts/screenshot.sh:*)",
+      "Bash(./scripts/*)",
+      "Bash(cmake:*)",
+      "Bash(ninja:*)",
+      "Bash(xcrun:*)",
+      "Bash(build/calc_tests:*)",
+      "Bash(build/GraphingCalc.app/Contents/MacOS/GraphingCalc:*)",
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(scripts/bench.sh:*)",
+      "Bash(build/calc_bench:*)"
+    ]
+  },
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "\"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check.sh",
+            "timeout": 300
+          }
+        ]
+      }
+    ]
+  }
+}

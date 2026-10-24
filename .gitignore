@@ -1,0 +1,8 @@
+build/
+.DS_Store
+*.png
+!resources/**/*.png
+!docs/**/*.png
+.claude/settings.local.json
+!tests/fixtures/*.png
+.cache/
