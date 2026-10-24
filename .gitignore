@@ -6,3 +6,4 @@ build/
 .claude/settings.local.json
 !tests/fixtures/*.png
 .cache/
+test-*.txt

@@ -51,6 +51,9 @@ enum BcOp : unsigned int {
     // the empty result and skips past END. IDX (arg = level) pushes the index / quadrature node.
     // END pops the body value, accumulates, and jumps back or pushes the result.
     OP_LOOP_BEGIN, OP_LOOP_IDX, OP_LOOP_END,
+    // list lookup with a variable index (Desmos L[k], 1-based). arg = offset of a constant block
+    // {n, v1..vn}; pops the index, pushes v[round(index)] or NaN when out of range.
+    OP_LIST_INDEX,
     OP_COUNT
 };
 

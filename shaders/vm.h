@@ -170,6 +170,13 @@ inline float run(device const uint* code, uint len, device const float* consts, 
         case OP_R: stack[sp++] = precise::sqrt(x * x + y * y); break;
         case OP_THETA: stack[sp++] = precise::atan2(y, x); break;
         case OP_NAN: case OP_PARAM: stack[sp++] = kNaN; break;  // OP_PARAM is CPU-only
+        case OP_LIST_INDEX: {
+            device const float* block = consts + bcArgOf(ins);
+            float idx = stack[sp - 1];
+            float k = rint(idx);
+            stack[sp - 1] = (isfinite(idx) && k >= 1 && k <= block[0]) ? block[uint(k)] : kNaN;
+            break;
+        }
         case OP_ADD: --sp; stack[sp - 1] += stack[sp]; break;
         case OP_SUB: --sp; stack[sp - 1] -= stack[sp]; break;
         case OP_MUL: --sp; stack[sp - 1] *= stack[sp]; break;

@@ -56,6 +56,7 @@ private:
     AstPool* m_out = nullptr;
     int m_depth = 0;
     int m_loopCounter = 0;   // unique names for sum/product/integral index variables
+    std::map<int, int> m_constLists;  // list node -> its all-numbers copy (variable-index lookups)
 
     int go(const AstPool& src, int node, const Scope& scope);
     int call(const std::string& name, std::vector<int> args);

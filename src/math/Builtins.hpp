@@ -103,6 +103,14 @@ inline double nPr(double n, double r) {
 
 inline double cmpResult(bool b) { return b ? 1.0 : 0.0; }
 
+// block = {n, v1, ..., vn}; Desmos lists are 1-based.
+inline double listIndex(const double* block, double index) {
+    if (!std::isfinite(index)) return kNaN;
+    double k = std::round(index);
+    double n = block[0];
+    return (k >= 1 && k <= n) ? block[size_t(k)] : kNaN;
+}
+
 // Applies a unary op (arity 1).
 inline double unary(BcOp op, double a) {
     switch (op) {

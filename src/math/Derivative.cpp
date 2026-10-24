@@ -207,6 +207,7 @@ int deriv(Builder& B, int node, const std::string& var) {
         return r;
     }
     case AstOp::Compare: case AstOp::And: return B.num(0);
+    case AstOp::Index: return B.num(0);  // lookups into constant lists are piecewise constant
     default: throw ParseError("Can't differentiate this expression");
     }
 }

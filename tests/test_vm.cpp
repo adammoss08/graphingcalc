@@ -52,6 +52,15 @@ std::vector<float> gpuEval(const Program& p, const std::vector<simd_float2>& pts
     return out;
 }
 
+Program implicitProgramWith(std::initializer_list<const char*> rows) {
+    std::vector<MathTree> trees;
+    for (auto* l : rows) { trees.emplace_back(); trees.back().insertLatex(l); }
+    std::vector<RowInput> in;
+    for (auto& t : trees) in.push_back({&t});
+    auto r = analyzeGraph(in, {});
+    return r.back().pieces.empty() ? Program{} : r.back().pieces[0].f;
+}
+
 Program implicitProgram(const char* latex) {
     MathTree t;
     t.insertLatex(latex);
@@ -83,8 +92,13 @@ TEST(gpu_vm_matches_cpu_vm) {
     };
     std::vector<simd_float2> pts;
     for (int i = 0; i < 64; ++i) pts.push_back(simd_make_float2(-7.3f + i * 0.23f, -3.1f + (i % 13) * 0.57f));
-    for (const char* c : cases) {
-        Program p = implicitProgram(c);
+    std::vector<std::pair<std::string, Program>> programs;
+    for (const char* c : cases) programs.push_back({c, implicitProgram(c)});
+    // Variable list index (OP_LIST_INDEX) needs a list defined in another row.
+    programs.push_back({"sum L[k] x^k = y", implicitProgramWith({"L=\\left[0.5,-1,2,0.25\\right]",
+        "\\sum_{k=1}^{4}L\\left[k\\right]\\cos\\left(kx\\right)=y"})});
+    for (auto& [name, p] : programs) {
+        const char* c = name.c_str();
         if (p.empty()) { test::fail(__FILE__, __LINE__, std::string("no program for ") + c); continue; }
         std::vector<float> g = gpuEval(p, pts);
         for (size_t i = 0; i < pts.size(); ++i) {

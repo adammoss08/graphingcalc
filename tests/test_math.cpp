@@ -376,3 +376,21 @@ TEST(implicit_double_path_resolves_deep_zoom) {
     CHECK(f[121 * 242 + 121] < 0);   // centre is inside
     CHECK(f[0] > 0);                 // corner is outside
 }
+
+TEST(list_index_with_variable) {
+    auto r = analyze({"L=\\left[10,20,30\\right]", "\\sum_{k=1}^{3}L\\left[k\\right]",
+                      "\\sum_{k=1}^{4}L\\left[k\\right]", "y=\\sum_{k=1}^{3}L\\left[k\\right]x^{k}",
+                      "L\\left[2\\right]"});
+    CHECK_NEAR(r[1].value, 60, 0);
+    CHECK(std::isnan(r[2].value));                       // L[4] is out of range: undefined
+    CHECK_EQ(r[3].pieces.size(), size_t(1));             // one curve, not broadcast over L
+    CHECK_NEAR(evaluate(r[3].pieces[0].f, 2), 10 * 2 + 20 * 4 + 30 * 8, 1e-9);
+    CHECK_NEAR(r[4].value, 20, 0);                       // constant index still folds
+    // The Fourier-drawing shape from a user's test file, scaled down.
+    auto f = analyze({"N=3", "a=\\left[1,0.5,0.25\\right]", "b=\\left[0,1,0\\right]",
+                      "f\\left(t\\right)=\\sum_{k=1}^{N}\\left(a\\left[k\\right]\\cos\\left(kt\\right)+b\\left[k\\right]\\sin\\left(kt\\right)\\right)",
+                      "\\left(f\\left(t\\right),f\\left(t\\right)\\right)"});
+    CHECK(f[4].graph == GraphKind::Parametric);
+    double t = 0.7, want = std::cos(t) + 0.5 * std::cos(2 * t) + 0.25 * std::cos(3 * t) + std::sin(2 * t);
+    CHECK_NEAR(evaluate(f[4].pieces[0].f, 0, 0, t), want, 1e-12);
+}

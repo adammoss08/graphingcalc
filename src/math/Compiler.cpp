@@ -248,11 +248,34 @@ int Resolver::go(const AstPool& src, int node, const Scope& scope) {
         int list = go(src, n.kids[0], scope);
         int idx = go(src, n.kids[1], scope);
         double iv;
-        if (!tryEvalConstant(o, idx, iv)) throw ParseError("List index must be a constant");
-        std::vector<int> el = elements(list);
-        long k = std::lround(iv);
-        if (k < 1 || k > long(el.size())) return o.num(bi::kNaN);
-        return el[k - 1];
+        if (tryEvalConstant(o, idx, iv)) {
+            std::vector<int> el = elements(list);
+            long k = std::lround(iv);
+            if (k < 1 || k > long(el.size())) return o.num(bi::kNaN);
+            return el[k - 1];
+        }
+        // Variable index (e.g. a[k] inside a sum): keep a lookup into an all-numbers list, which
+        // compiles to OP_LIST_INDEX. One copy per list, however many times it's indexed.
+        auto cached = m_constLists.find(list);
+        int numbers;
+        if (cached != m_constLists.end()) {
+            numbers = cached->second;
+        } else {
+            AstNode l;
+            l.op = AstOp::List;
+            for (int e : elements(list)) {
+                double v;
+                if (!tryEvalConstant(o, e, v))
+                    throw ParseError("A list indexed by a variable must contain only numbers");
+                l.kids.push_back(o.num(v));
+            }
+            numbers = o.add(std::move(l));
+            m_constLists[list] = numbers;
+        }
+        AstNode ix;
+        ix.op = AstOp::Index;
+        ix.kids = {numbers, idx};
+        return o.add(std::move(ix));
     }
     default: {
         AstNode copy = n;
@@ -288,8 +311,9 @@ int listLength(const AstPool& pool, int node) {
     if (n.op == AstOp::List) return int(n.kids.size());
     if (n.op == AstOp::Range) return rangeSpec(pool, n).count;
     int best = -1;
-    for (int k : n.kids) {
-        if (k < 0) continue;
+    for (size_t ki = 0; ki < n.kids.size(); ++ki) {
+        int k = n.kids[ki];
+        if (k < 0 || (n.op == AstOp::Index && ki == 0)) continue;  // a looked-up list isn't broadcast
         int l = listLength(pool, k);
         if (l >= 0 && (best < 0 || l < best)) best = l;
     }
@@ -304,10 +328,15 @@ int pick(AstPool& pool, int node, int i) {
         return pool.num(r.start + r.step * i);
     }
     bool hasList = false;
-    for (int k : n.kids) if (k >= 0 && listLength(pool, k) >= 0) { hasList = true; break; }
+    for (size_t ki = 0; ki < n.kids.size(); ++ki) {
+        if (n.op == AstOp::Index && ki == 0) continue;
+        if (n.kids[ki] >= 0 && listLength(pool, n.kids[ki]) >= 0) { hasList = true; break; }
+    }
     if (!hasList) return node;
-    for (int& k : n.kids)
-        if (k >= 0) k = pick(pool, k, i);
+    for (size_t ki = 0; ki < n.kids.size(); ++ki) {
+        if (n.op == AstOp::Index && ki == 0) continue;
+        if (n.kids[ki] >= 0) n.kids[ki] = pick(pool, n.kids[ki], i);
+    }
     return pool.add(std::move(n));
 }
 
@@ -390,6 +419,7 @@ struct Emitter {
     Program prog;
     const std::vector<std::string>* paramNames = nullptr;
     std::vector<std::pair<std::string, uint32_t>> loops;  // active loop index names -> (level, kind)
+    std::map<int, uint32_t> listBlocks;                   // list node -> constant block offset
     int sp = 0;
 
     void push(BcOp op, uint32_t arg = 0) {
@@ -490,6 +520,23 @@ struct Emitter {
             for (size_t k = 1; k < n.kids.size(); ++k) { node(n.kids[k]); push(OP_AND); }
             return;
         case AstOp::Piecewise: piecewise(n, 0); return;
+        case AstOp::Index: {
+            const AstNode& l = pool[n.kids[0]];
+            if (l.op != AstOp::List) throw ParseError("List index must be a constant");
+            uint32_t off;
+            auto it = listBlocks.find(n.kids[0]);
+            if (it != listBlocks.end()) {
+                off = it->second;
+            } else {
+                off = uint32_t(prog.consts.size());
+                prog.consts.push_back(double(l.kids.size()));
+                for (int k : l.kids) prog.consts.push_back(pool[k].num);
+                listBlocks[n.kids[0]] = off;
+            }
+            node(n.kids[1]);
+            push(OP_LIST_INDEX, off);
+            return;
+        }
         case AstOp::Sum: case AstOp::Prod: case AstOp::Integral: {
             uint32_t kind = n.op == AstOp::Sum ? 0 : n.op == AstOp::Prod ? 1 : 2;
             if (loops.size() >= size_t(kBcMaxLoops)) throw ParseError("Too many nested sums, products or integrals");

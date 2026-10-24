@@ -38,6 +38,7 @@ double evaluate(const Program& p, double x, double y, double t, const double* pa
         case OP_THETA: stack[sp++] = std::atan2(y, x); break;
         case OP_NAN: stack[sp++] = bi::kNaN; break;
         case OP_PARAM: stack[sp++] = params ? params[bcArgOf(ins)] : bi::kNaN; break;
+        case OP_LIST_INDEX: stack[sp - 1] = bi::listIndex(p.consts.data() + bcArgOf(ins), stack[sp - 1]); break;
         case OP_ADD: --sp; stack[sp - 1] += stack[sp]; break;
         case OP_SUB: --sp; stack[sp - 1] -= stack[sp]; break;
         case OP_MUL: --sp; stack[sp - 1] *= stack[sp]; break;
@@ -128,6 +129,11 @@ void evaluateBatch(const Program& p, int n, const double* xs, const double* ys, 
             case OP_MUL: { --sp; double* a = stack[sp - 1]; double* b = stack[sp]; for (int i = 0; i < m; ++i) a[i] *= b[i]; break; }
             case OP_DIV: { --sp; double* a = stack[sp - 1]; double* b = stack[sp]; for (int i = 0; i < m; ++i) a[i] /= b[i]; break; }
             case OP_NEG: for (int i = 0; i < m; ++i) top[i] = -top[i]; break;
+            case OP_LIST_INDEX: {
+                const double* block = p.consts.data() + bcArgOf(ins);
+                for (int i = 0; i < m; ++i) top[i] = bi::listIndex(block, top[i]);
+                break;
+            }
             case OP_SIN: for (int i = 0; i < m; ++i) top[i] = std::sin(top[i]); break;
             case OP_COS: for (int i = 0; i < m; ++i) top[i] = std::cos(top[i]); break;
             case OP_SQRT: for (int i = 0; i < m; ++i) top[i] = std::sqrt(top[i]); break;
