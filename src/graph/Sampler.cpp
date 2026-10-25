@@ -263,48 +263,85 @@ void sampleParametric(const Program& fx, const Program* fy, double t0, double t1
     out.domainLo = t0;
     out.domainHi = t1;
 
-    auto pointAt = [&](double t, double& x, double& y) {
+    // Points for a batch of parameter values, evaluated across all cores.
+    std::vector<double> bx, by;
+    auto evalPoints = [&](const std::vector<double>& ts, std::vector<double>& xs, std::vector<double>& ys) {
+        int n = int(ts.size());
+        xs.resize(n);
+        ys.resize(n);
+        evaluateBatchParallel(fx, n, nullptr, nullptr, ts.data(), xs.data());
         if (polar) {
-            double r = evaluate(fx, 0, 0, t);
-            x = r * std::cos(t);
-            y = r * std::sin(t);
-        } else {
-            x = evaluate(fx, 0, 0, t);
-            y = evaluate(*fy, 0, 0, t);
-        }
-        return std::isfinite(x) && std::isfinite(y);
-    };
-
-    Emitter em{out, false};
-    const double s = vp.scale;
-    std::function<void(double, double, double, double, double, double, int)> refine;
-    refine = [&](double ta, double xa, double ya, double tb, double xb, double yb, int depth) {
-        if (out.xy.size() > kMaxPoints * 2) return;
-        double tm = 0.5 * (ta + tb), xm, ym;
-        bool okM = pointAt(tm, xm, ym);
-        double chord = std::hypot(xb - xa, yb - ya) * s;
-        if (depth < 12 && okM) {
-            double dev = std::hypot(xm - 0.5 * (xa + xb), ym - 0.5 * (ya + yb)) * s;
-            if (dev > kFlatTolPts || chord > 8.0) {
-                refine(ta, xa, ya, tm, xm, ym, depth + 1);
-                refine(tm, xm, ym, tb, xb, yb, depth + 1);
-                return;
+            for (int i = 0; i < n; ++i) {
+                double r = xs[i];
+                xs[i] = r * std::cos(ts[i]);
+                ys[i] = r * std::sin(ts[i]);
             }
+        } else {
+            evaluateBatchParallel(*fy, n, nullptr, nullptr, ts.data(), ys.data());
         }
-        if (!okM || (depth >= 12 && chord > 50.0)) { em.lift(); return; }
-        if (!em.penDown) em.point(xa, ya);
-        em.point(xb, yb);
     };
+    auto ok = [](double x, double y) { return std::isfinite(x) && std::isfinite(y); };
 
-    int n = polar ? 4000 : 800;
-    double tPrev = t0, xPrev = 0, yPrev = 0;
-    bool okPrev = pointAt(t0, xPrev, yPrev);
-    for (int i = 1; i <= n; ++i) {
-        double t = t0 + (t1 - t0) * i / n, x, y;
-        bool ok = pointAt(t, x, y);
-        if (ok && okPrev) refine(tPrev, xPrev, yPrev, t, x, y, 0);
-        else em.lift();
-        tPrev = t; xPrev = x; yPrev = y; okPrev = ok;
+    // Breadth-first refinement: each round tests every unfinished segment's midpoint in one batch,
+    // with the same accept/split rules as a depth-first recursion (so the output is identical).
+    struct Seg {
+        double ta, xa, ya, tb, xb, yb;
+        uint8_t depth;
+        uint8_t state;  // 0 open, 1 draw, 2 lift
+    };
+    const int n0 = polar ? 4000 : 800;
+    std::vector<double> ts(n0 + 1);
+    for (int i = 0; i <= n0; ++i) ts[i] = t0 + (t1 - t0) * i / n0;
+    std::vector<double> xs, ys;
+    evalPoints(ts, xs, ys);
+    std::vector<Seg> segs;
+    segs.reserve(size_t(n0) * 4);
+    for (int i = 0; i < n0; ++i) {
+        bool good = ok(xs[i], ys[i]) && ok(xs[i + 1], ys[i + 1]);
+        segs.push_back({ts[i], xs[i], ys[i], ts[i + 1], xs[i + 1], ys[i + 1], 0, uint8_t(good ? 0 : 2)});
+    }
+    const double s = vp.scale;
+    constexpr int kMaxDepth = 12;
+    std::vector<double> mt;
+    std::vector<size_t> open;
+    std::vector<Seg> next;
+    for (int round = 0; round <= kMaxDepth; ++round) {
+        open.clear();
+        mt.clear();
+        for (size_t k = 0; k < segs.size(); ++k)
+            if (segs[k].state == 0) { open.push_back(k); mt.push_back(0.5 * (segs[k].ta + segs[k].tb)); }
+        if (open.empty()) break;
+        evalPoints(mt, bx, by);
+        bool budget = segs.size() + open.size() < kMaxPoints;
+        next.clear();
+        next.reserve(segs.size() + open.size());
+        size_t o = 0;
+        for (size_t k = 0; k < segs.size(); ++k) {
+            Seg sg = segs[k];
+            if (sg.state != 0) { next.push_back(sg); continue; }
+            double xm = bx[o], ym = by[o], tm = mt[o];
+            ++o;
+            bool okM = ok(xm, ym);
+            double chord = std::hypot(sg.xb - sg.xa, sg.yb - sg.ya) * s;
+            if (sg.depth < kMaxDepth && okM && budget) {
+                double dev = std::hypot(xm - 0.5 * (sg.xa + sg.xb), ym - 0.5 * (sg.ya + sg.yb)) * s;
+                if (dev > kFlatTolPts || chord > 8.0) {
+                    uint8_t d = uint8_t(sg.depth + 1);
+                    next.push_back({sg.ta, sg.xa, sg.ya, tm, xm, ym, d, 0});
+                    next.push_back({tm, xm, ym, sg.tb, sg.xb, sg.yb, d, 0});
+                    continue;
+                }
+            }
+            sg.state = (!okM || (sg.depth >= kMaxDepth && chord > 50.0)) ? 2 : 1;
+            next.push_back(sg);
+        }
+        segs.swap(next);
+    }
+    Emitter em{out, false};
+    for (const Seg& sg : segs) {
+        if (sg.state != 1) { em.lift(); continue; }
+        if (!em.penDown) em.point(sg.xa, sg.ya);
+        em.point(sg.xb, sg.yb);
     }
 }
 

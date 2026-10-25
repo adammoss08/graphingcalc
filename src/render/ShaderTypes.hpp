@@ -51,7 +51,8 @@ struct CurveStyle {
     float width;            // line width (points)
     float dash;             // 0 solid; > 0 dash length (gap = dash * 7/11); < 0 dotted, period -dash
     sh_uint id;             // unique per curve per frame (>= 1), for no-double-blend
-    sh_uint pad0, pad1, pad2;
+    float zoom;             // current scale / scale at sampling (a stale curve drawn while it resamples)
+    sh_uint pad1, pad2;
 };
 
 // GPU implicit-curve piece.

@@ -18,6 +18,7 @@ struct CurvePoints {
     double cullLo = 0, cullHi = 0;  // dependent-variable range refined at full detail (explicit)
     uint64_t hash = 0;              // GraphPiece program hash at sampling time
     bool viewIndependentDomain = false;  // parametric/polar: domain doesn't depend on the view
+    double costMs = 0;              // how long the last sampling took (decides sync vs background)
 
     size_t count() const { return xy.size() / 2; }
     // Still valid for `vp`? (same zoom; explicit curves must also cover the visible range)

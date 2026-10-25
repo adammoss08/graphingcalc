@@ -245,6 +245,7 @@ void Renderer::render(const FrameDesc& f, MTL::Texture* target, CA::MetalDrawabl
             st.width = c.width;
             st.dash = c.dash;
             st.id = idx + 1;
+            st.zoom = c.zoom;
             I.styles.push_back(st);
             const auto& xy = c.points->xy;
             float cum = 0;
@@ -264,6 +265,7 @@ void Renderer::render(const FrameDesc& f, MTL::Texture* target, CA::MetalDrawabl
             st.color = {d.color.r, d.color.g, d.color.b, d.opacity};
             st.clip = graphClip;
             st.translate = {g->area.x, g->area.y};
+            st.zoom = 1;
             st.width = d.width;
             st.dash = d.dash;
             st.id = idx + 1;

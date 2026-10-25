@@ -55,12 +55,17 @@ whenever sources changed and blocks finishing while any of them fail. Fix the pr
 | Keystroke → updated graph | within 1 frame (≤ 16.6 ms end to end) |
 | Pan, 50+ expressions | steady 60 fps; CPU frame work ≤ 4 ms |
 | Full-window implicit curve | < 2 ms GPU time |
+| Zoom a heavy curve (512-term Fourier) | ≤ 4 ms CPU per frame; full resample ≤ 60 ms in the background |
 
 Where the speed comes from, in priority order:
 1. Incremental re-evaluation through the dependency graph: editing one expression recomputes only
    it and its dependents.
 2. Curve caches: when panning, reuse the samples already taken and sample only newly exposed regions;
-   refine progressively rather than starting over.
+   refine progressively rather than starting over. Curves that took > 4 ms to sample resample on a
+   background queue while the old samples are drawn rescaled (`CurveStyle.zoom`); results land via
+   the main queue (`GraphView::asyncSampling`, interactive only; headless tools stay synchronous).
+   Evaluation is batched (sums/products/integrals included) and large batches use every core
+   (`evaluateBatchParallel`); parametric refinement is breadth-first so each round is one batch.
 3. The entire UI (rects, circles, glyphs) is one instanced draw, and curves one or two more.
 4. Measure, don't guess: `--perf-hud` shows CPU and GPU-timestamp timings per frame; use Instruments'
    Metal System Trace for deeper profiling.

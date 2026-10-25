@@ -80,6 +80,10 @@ bool App::init(MTL::Device* device, const std::string& metallibPath, std::string
         m_dirty = true;
     };
     m_graph.onSettingsChanged = [this] { m_needsAnalysis = true; m_dirty = true; };
+    m_graph.onAsyncUpdate = [this] {
+        m_dirty = true;
+        if (onRedrawNeeded) onRedrawNeeded();
+    };
     m_list.addRow(0, "", true);
     m_modified = false;
     return true;

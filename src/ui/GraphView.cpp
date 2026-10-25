@@ -40,8 +40,15 @@ struct SampleJob {
     uint64_t hash;   // what the cache entry is valid for (programs + domain)
 };
 
+constexpr double kAsyncCostMs = 4;   // curves slower than this resample in the background
+
+double msSince(std::chrono::steady_clock::time_point t0) {
+    return std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+}
+
 void runSampleJob(void* ctx, size_t i) {
     SampleJob& j = static_cast<SampleJob*>(ctx)[i];
+    auto t0 = std::chrono::steady_clock::now();
     switch (j.kind) {
     case GraphKind::ExplicitY: case GraphKind::ExplicitX: {
         bool alongY = j.kind == GraphKind::ExplicitX;
@@ -53,6 +60,7 @@ void runSampleJob(void* ctx, size_t i) {
     default: break;
     }
     j.out->hash = j.hash;
+    j.out->costMs = msSince(t0);
 }
 
 uint64_t mixDomain(uint64_t h, double a, double b) {
@@ -210,11 +218,16 @@ void GraphView::buildFrame(const std::vector<GraphItem>& items, int selected, Gr
                 bool stale = c.hash != h || c.xy.empty() || !c.covers(vp, alongY) ||
                              (explicitKind && c.nearEdge(vp, alongY));
                 if (stale) {
-                    if (explicitKind && c.hash != h) c.xy.clear();  // force a full resample, not an extension
-                    c.hash = explicitKind ? h : c.hash;
-                    jobs.push_back({&pc, an.graph, an.tMin, an.tMax, &c, vp, h});
+                    if (asyncSampling && !c.xy.empty() && c.costMs > kAsyncCostMs) {
+                        // Heavy: keep drawing the old samples (rescaled) and refine in the background.
+                        scheduleAsync(k, pc, an.graph, an.tMin, an.tMax, h);
+                    } else {
+                        if (explicitKind && c.hash != h) c.xy.clear();  // full resample, not an extension
+                        c.hash = explicitKind ? h : c.hash;
+                        jobs.push_back({&pc, an.graph, an.tMin, an.tMax, &c, vp, h});
+                    }
                 }
-                out.curves.push_back({&c, st.color, width, opacity, dashLen});
+                out.curves.push_back({&c, st.color, width, opacity, dashLen, 1.0f});
                 if (explicitKind && an.rel != Cmp::Eq)
                     out.implicits.push_back({&pc.region, st.color, width, opacity, 0, false, true, st.fillOpacity});
                 break;
@@ -234,6 +247,8 @@ void GraphView::buildFrame(const std::vector<GraphItem>& items, int selected, Gr
         dispatch_apply_f(jobs.size(), dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), jobs.data(),
                          runSampleJob);
     }
+    for (auto& cd : out.curves)
+        if (cd.points->scale > 0) cd.zoom = float(vp.scale / cd.points->scale);
     for (auto it = m_cache.begin(); it != m_cache.end();) {
         if (!used.count(it->first)) it = m_cache.erase(it);
         else ++it;
@@ -549,8 +564,9 @@ bool GraphView::pickCurve(float x, float y, const std::vector<GraphItem>& items,
                 if (c == m_cache.end()) break;
                 const CurvePoints& cp = c->second;
                 float tx = float(vp.sx(cp.anchorX)), ty = float(vp.sy(cp.anchorY));
+                float zm = cp.scale > 0 ? float(vp.scale / cp.scale) : 1.0f;
                 for (size_t k = 0; k + 1 < cp.xy.size(); k += 2) {
-                    float px = cp.xy[k] + tx, py = cp.xy[k + 1] + ty;
+                    float px = cp.xy[k] * zm + tx, py = cp.xy[k + 1] * zm + ty;
                     consider(std::hypot(px - mx, py - my), vp.wx(px), vp.wy(py));
                 }
                 break;
@@ -703,6 +719,56 @@ bool GraphView::magnify(float x, float y, float amount) {
     if (!area.contains(x, y)) return false;
     vp.zoomAbout(x - area.x, y - area.y, std::max(0.1, 1.0 + amount));
     return true;
+}
+
+// ---- background resampling ---------------------------------------------------------------------
+
+namespace {
+struct AsyncJob {
+    GraphView* view;
+    uint64_t key, gen, hash;
+    GraphKind kind;
+    Program f, g;      // copies: the analysis may change while the job runs
+    double t0, t1;
+    Viewport vp;
+    CurvePoints result;
+};
+}
+
+void GraphView::scheduleAsync(uint64_t key, const GraphPiece& pc, GraphKind kind, double t0, double t1,
+                              uint64_t hash) {
+    if (m_inflight.count(key)) return;  // one job per curve; a newer view is picked up when it lands
+    auto* job = new AsyncJob{this, key, ++m_generation, hash, kind, pc.f, pc.g, t0, t1, vp, {}};
+    m_inflight[key] = job->gen;
+    dispatch_async_f(dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), job, asyncWork);
+}
+
+void GraphView::asyncWork(void* ctx) {
+    auto* job = static_cast<AsyncJob*>(ctx);
+    auto t0 = std::chrono::steady_clock::now();
+    switch (job->kind) {
+    case GraphKind::ExplicitY: sampleExplicit(job->f, job->vp, false, job->result); break;
+    case GraphKind::ExplicitX: sampleExplicit(job->f, job->vp, true, job->result); break;
+    case GraphKind::Polar: sampleParametric(job->f, nullptr, job->t0, job->t1, true, job->vp, job->result); break;
+    case GraphKind::Parametric: sampleParametric(job->f, &job->g, job->t0, job->t1, false, job->vp, job->result); break;
+    default: break;
+    }
+    job->result.hash = job->hash;
+    job->result.costMs = msSince(t0);
+    dispatch_async_f(dispatch_get_main_queue(), job, asyncDone);
+}
+
+void GraphView::asyncDone(void* ctx) {
+    auto* job = static_cast<AsyncJob*>(ctx);
+    GraphView& v = *job->view;
+    auto it = v.m_inflight.find(job->key);
+    if (it != v.m_inflight.end() && it->second == job->gen) {
+        v.m_inflight.erase(it);
+        auto c = v.m_cache.find(job->key);
+        if (c != v.m_cache.end()) c->second = std::move(job->result);  // still on screen: swap in
+        if (v.onAsyncUpdate) v.onAsyncUpdate();
+    }
+    delete job;
 }
 
 CursorKind GraphView::cursorAt(float x, float y) const {

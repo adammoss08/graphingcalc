@@ -47,6 +47,11 @@ public:
     GraphSettings settings;
     std::function<void(int row)> onSelectRow;     // clicked a curve (-1: clicked empty paper)
     std::function<void()> onSettingsChanged;      // degrees toggled etc. (re-analyse)
+    // Heavy curves resample on a background queue while the old samples are drawn rescaled
+    // (progressive refinement). Off for headless use: results arrive via the main queue.
+    bool asyncSampling = false;
+    std::function<void()> onAsyncUpdate;          // a background resample landed (redraw)
+    size_t samplesInFlight() const { return m_inflight.size(); }
 
     void setArea(const Rect& r);
     void resetView();
@@ -89,6 +94,11 @@ private:
     };
 
     std::unordered_map<uint64_t, CurvePoints> m_cache;
+    std::unordered_map<uint64_t, uint64_t> m_inflight;   // cache key -> generation of its background job
+    uint64_t m_generation = 0;
+    void scheduleAsync(uint64_t key, const GraphPiece& pc, GraphKind kind, double t0, double t1, uint64_t hash);
+    static void asyncWork(void* ctx);
+    static void asyncDone(void* ctx);
     bool m_initialised = false;
     Button m_hoverButton = Button::None, m_pressButton = Button::None;
     int m_hoverSetting = -1;

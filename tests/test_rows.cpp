@@ -209,3 +209,31 @@ TEST(rows_showcase_save_load_roundtrip) {
     CHECK(r2[6].columns[1].style.showLines);
     CHECK_EQ(r2[2].folderId, r2[1].id);
 }
+
+#include <CoreFoundation/CoreFoundation.h>
+
+// Heavy curves refine in the background: a zoom frame stays cheap and the sharper samples land later.
+TEST(rows_heavy_curve_refines_in_background) {
+    App& a = fresh();
+    std::string as = "a=\\left[", bs = "b=\\left[";
+    for (int k = 1; k <= 2000; ++k) {
+        char buf[32];
+        std::snprintf(buf, sizeof buf, "%s%.4f", k > 1 ? "," : "", std::sin(k * 1.7) / k);
+        as += buf;
+        std::snprintf(buf, sizeof buf, "%s%.4f", k > 1 ? "," : "", std::cos(k * 0.9) / k);
+        bs += buf;
+    }
+    a.pasteText(as + "\\right]\n" + bs + "\\right]\n"
+                "\\left(\\sum_{k=1}^{2000}a\\left[k\\right]\\cos\\left(kt\\right),\\sum_{k=1}^{2000}b\\left[k\\right]\\sin\\left(kt\\right)\\right)");
+    L(a).blur();
+    a.graph().asyncSampling = true;
+    frame(a);                                   // first sample is synchronous (nothing to show yet)
+    a.scroll(900, 400, 0, 30, true);            // zoom in
+    frame(a);
+    CHECK(a.lastFrameCpuMs() < 16.6);           // the stale curve is drawn rescaled, not resampled
+    CHECK(a.graph().samplesInFlight() == 1);
+    for (int i = 0; i < 400 && a.graph().samplesInFlight() > 0; ++i)
+        CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0.01, true);  // deliver the result (main queue)
+    CHECK(a.graph().samplesInFlight() == 0);
+    CHECK(a.needsRedraw());
+}

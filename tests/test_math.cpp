@@ -394,3 +394,30 @@ TEST(list_index_with_variable) {
     double t = 0.7, want = std::cos(t) + 0.5 * std::cos(2 * t) + 0.25 * std::cos(3 * t) + std::sin(2 * t);
     CHECK_NEAR(evaluate(f[4].pieces[0].f, 0, 0, t), want, 1e-12);
 }
+
+TEST(batched_loops_match_scalar) {
+    const char* cases[] = {
+        "y=\\sum_{k=1}^{40}\\frac{\\sin\\left(kx\\right)}{k}",           // uniform bounds: batched
+        "y=\\sum_{k=1}^{x}k",                                             // per-lane bounds: fallback
+        "y=\\int_{0}^{x}\\cos\\left(t^{2}\\right)dt",                     // per-lane integral limits
+        "y=\\prod_{k=1}^{4}\\left(x-k\\right)+\\int_{-1}^{1}e^{tx}dt",
+    };
+    std::vector<double> xs, out(700);
+    for (int i = 0; i < 700; ++i) xs.push_back(-6 + i * 0.0173);
+    for (const char* c : cases) {
+        RowAnalysis r = one(c);
+        if (r.pieces.empty()) { test::fail(__FILE__, __LINE__, std::string("no program: ") + c); continue; }
+        const Program& p = r.pieces[0].f;
+        evaluateBatchParallel(p, 700, xs.data(), nullptr, nullptr, out.data());
+        for (int i = 0; i < 700; i += 7) {
+            double want = evaluate(p, xs[i]);
+            bool same = (std::isnan(want) && std::isnan(out[i])) || std::fabs(want - out[i]) <= 1e-12 * (1 + std::fabs(want));
+            if (!same) {
+                char buf[160];
+                std::snprintf(buf, sizeof buf, "%s at x=%g: batch %.15g scalar %.15g", c, xs[i], out[i], want);
+                test::fail(__FILE__, __LINE__, buf);
+                break;
+            }
+        }
+    }
+}

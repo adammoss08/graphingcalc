@@ -57,9 +57,9 @@ vertex CurveVOut curveVertex(uint vid [[vertex_id]], uint iid [[instance_id]],
     CurveVertex a = verts[iid], b = verts[iid + 1];
     if (a.curve != b.curve || any(isnan(a.pos)) || any(isnan(b.pos))) return degenerate();
     CurveStyle st = styles[a.curve];
-    CurveVOut o = expandSegment(a.pos + st.translate, b.pos + st.translate, vid, st.width * 0.5,
+    CurveVOut o = expandSegment(a.pos * st.zoom + st.translate, b.pos * st.zoom + st.translate, vid, st.width * 0.5,
                                 1.0 / u.scale, u);
-    o.dashStart = a.cumLen;
+    o.dashStart = a.cumLen * st.zoom;
     o.style = a.curve;
     return o;
 }

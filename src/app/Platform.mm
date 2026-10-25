@@ -540,6 +540,12 @@ struct EarlyInit {
     self.view.app = self.app;
     self.window.contentView = self.view;
     __weak GraphView* weakView = self.view;
+    // Interactive: heavy curves refine in the background while the old samples are shown.
+    self.app->graph().asyncSampling = true;
+    self.app->onRedrawNeeded = [weakView] {
+        GraphView* v = weakView;
+        if (v) [v requestFrame];
+    };
     self.app->onRequestImage = [weakView] {
         GraphView* v = weakView;
         if (!v) return;

@@ -75,6 +75,7 @@ public:
     void openStyleMenu(int row, int col);  // for tests / CLI
 
     std::function<void()> onRequestImage;  // platform: show an open panel, then call addImage()
+    std::function<void()> onRedrawNeeded;  // platform: something changed off the event path (background work)
 
     void newGraph();
     bool loadFile(const std::string& path, std::string& error);

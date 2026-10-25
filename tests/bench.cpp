@@ -5,6 +5,9 @@
 #include "render/Renderer.hpp"
 
 #include <Metal/Metal.hpp>
+#include <CoreFoundation/CoreFoundation.h>
+
+#include <cmath>
 
 #include <algorithm>
 #include <chrono>
@@ -151,6 +154,48 @@ int main(int argc, char** argv) {
         results.push_back({"implicit_circle_gpu_ms", std::max(0.0, circle - base), 2.0, "ms"});
         results.push_back({"implicit_trig_gpu_ms", std::max(0.0, hard - base), 2.0, "ms"});
         results.push_back({"empty_frame_gpu_ms", base, 2.0, "ms"});
+    }
+
+    // 4) Heavy curve (a 512-term Fourier drawing, like a user's test graph): full resample cost, and
+    //    zoom frames with background refinement (the interactive app's mode).
+    {
+        App app;
+        std::string err;
+        app.init(dev, METALLIB_PATH, err);
+        app.setSize(W, H, 2);
+        auto list = [](const char* name, double seed) {
+            std::string s = std::string(name) + "=\\left[";
+            for (int k = 1; k <= 512; ++k) {
+                char buf[32];
+                std::snprintf(buf, sizeof buf, "%s%.4f", k > 1 ? "," : "", std::sin(k * seed) * 3 / k);
+                s += buf;
+            }
+            return s + "\\right]";
+        };
+        app.pasteText(list("a", 1.3) + "\n" + list("b", 2.1) + "\n" + list("c", 0.7) + "\n" + list("d", 1.9) + "\n" +
+                      "\\left(\\sum_{k=1}^{512}\\left(a\\left[k\\right]\\cos\\left(kt\\right)+b\\left[k\\right]\\sin\\left(kt\\right)\\right),"
+                      "\\sum_{k=1}^{512}\\left(c\\left[k\\right]\\cos\\left(kt\\right)+d\\left[k\\right]\\sin\\left(kt\\right)\\right)\\right)");
+        app.list().rows.back().domainMax.set("2\\pi");
+        app.list().blur();
+        MTL::Texture* tex = app.renderer().makeOffscreenTarget(int(W * 2), int(H * 2));
+        app.render(tex, nullptr, true);
+        std::vector<double> resample;
+        for (int f = 0; f < 4; ++f) {
+            app.scroll(1000, 450, 0, 4, true);
+            app.render(tex, nullptr, true);
+            resample.push_back(app.graph().lastSampleMs());
+        }
+        results.push_back({"heavy_curve_resample_ms (p50)", median(resample), 60.0, "ms"});
+        app.graph().asyncSampling = true;
+        std::vector<double> zoom;
+        for (int f = 0; f < 40; ++f) {
+            app.scroll(1000, 450, 0, 4, true);
+            app.render(tex, nullptr, false);
+            zoom.push_back(app.lastFrameCpuMs());
+            CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, true);  // let background results land
+        }
+        results.push_back({"heavy_curve_zoom_frame_ms (p50)", median(zoom), 4.0, "ms"});
+        tex->release();
     }
 
     bool allOk = true;

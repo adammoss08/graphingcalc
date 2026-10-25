@@ -24,6 +24,7 @@ struct CurveDraw {
     float width = theme::CurveWidth;
     float opacity = theme::CurveOpacity;
     float dash = 0;           // 0 solid; > 0 dash length (gap = 7/11 of it); < 0 dotted with this period
+    float zoom = 1;           // view scale / points->scale (stale samples drawn rescaled)
 };
 
 struct ImplicitDraw {

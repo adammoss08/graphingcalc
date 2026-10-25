@@ -12,7 +12,7 @@ struct Program {
     std::vector<double> consts;
     int maxStack = 0;
     bool usesX = false, usesY = false, usesT = false, usesPolar = false;
-    bool hasLoops = false;   // sums/products/integrals: batched evaluation runs per element
+    bool hasLoops = false;   // sums/products/integrals (batched when bounds agree across lanes)
 
     bool empty() const { return code.empty(); }
     uint64_t hash() const;
@@ -26,5 +26,8 @@ double evaluate(const Program& p, double x, double y = 0, double t = 0, const do
 // across the whole chunk, so the inner loops vectorise.
 void evaluateBatch(const Program& p, int n, const double* xs, const double* ys, const double* ts,
                    double* out, double y0 = 0, double t0 = 0);
+// As evaluateBatch, split across all cores when the batch is large enough to pay for it.
+void evaluateBatchParallel(const Program& p, int n, const double* xs, const double* ys, const double* ts,
+                           double* out, double y0 = 0, double t0 = 0);
 
 } // namespace calc
