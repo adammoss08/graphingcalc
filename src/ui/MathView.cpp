@@ -11,7 +11,6 @@ namespace {
 constexpr float kAsc = 0.74f;      // em: typical cap/letter height for line metrics
 constexpr float kDesc = 0.24f;
 constexpr float kAxis = 0.26f;     // em: maths axis (fraction bar, minus sign) above baseline
-constexpr Color kEmptyBlock = Color::hex(0x000000, 0.1f);
 
 bool isLetter(char32_t c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z'); }
 bool isGreek(char32_t c) { return c >= 0x391 && c <= 0x3C9; }
@@ -433,7 +432,7 @@ void MathLayout::draw(Batch2D& b, float x, float baseline, Color color, const Ma
         switch (c.kind) {
         case Cmd::Glyph: b.glyph(c.font, c.size, x + c.x, baseline + c.y, c.ch, col); break;
         case Cmd::Line: b.line(x + c.x, baseline + c.y, x + c.x1, baseline + c.y1, c.thick, col); break;
-        case Cmd::Box: b.rect({x + c.x, baseline + c.y, c.x1 - c.x, c.y1 - c.y}, kEmptyBlock); break;
+        case Cmd::Box: b.rect({x + c.x, baseline + c.y, c.x1 - c.x, c.y1 - c.y}, theme::EmptyBlock); break;
         }
     }
     if (tree && focused && cursorVisible && !tree->hasSelection()) {

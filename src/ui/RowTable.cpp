@@ -122,8 +122,9 @@ void ExpressionList::drawTable(Batch2D& b, int i, float top, bool sel, bool curs
     for (int c = 1; c < int(r.columns.size()); ++c) {
         const TableColumn& col = r.columns[c];
         float cx = x0 + c * TableColumnWidth + kCellPad + kColumnIconRadius, cy = y0 + TableHeaderHeight * 0.5f;
-        if (col.style.hidden) b.circle(cx, cy, kColumnIconRadius, White, 1.5f, col.style.color.withAlpha(0.6f));
-        else b.circle(cx, cy, kColumnIconRadius, col.style.color);
+        Color ic = onPaper(col.style.color);
+        if (col.style.hidden) b.circle(cx, cy, kColumnIconRadius, Paper, 1.5f, ic.withAlpha(0.6f));
+        else b.circle(cx, cy, kColumnIconRadius, ic);
     }
     // Focused cell frame
     if (sel && (focus.field == Field::TableCell || focus.field == Field::TableHeader)) {

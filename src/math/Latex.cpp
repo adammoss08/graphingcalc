@@ -234,9 +234,9 @@ struct LatexParser {
             else if (cmd == "infty") out.insert(int(out.nodes.size()), Node::symbol(sym::Infinity));
             else if (cmd == "sim") out.insert(int(out.nodes.size()), Node::symbol('~'));
             else if (cmd == "ldots" || cmd == "dots") appendLetters(out, "...");
-            else if (cmd == "{" || cmd == "}") {
-                // Bare \{ ... \} (no \left): treat as a brace bracket.
-                if (cmd == "{") {
+            else if (cmd == "{" || cmd == "}" || cmd == "lbrace" || cmd == "rbrace") {
+                // Bare \{ ... \} or \lbrace ... \rbrace (no \left): treat as a brace bracket.
+                if (cmd == "{" || cmd == "lbrace") {
                     auto n = Node::paren('{', '}');
                     parseSequence(*n->blocks[0], 0, true);
                     out.insert(int(out.nodes.size()), std::move(n));
@@ -253,9 +253,17 @@ struct LatexParser {
             return true;
         }
         if (c == '{') {
+            // A bare group. In Desmos braces only mean a piecewise or a restriction, so typed text
+            // like "y={x>0:x,-x}" keeps them as a brace bracket; other groups ({x}^{2}) are transparent.
             ++i;
-            parseSequence(out, U'}');
+            auto n = Node::paren('{', '}');
+            parseSequence(*n->blocks[0], U'}');
             if (!eof() && s[i] == '}') ++i;
+            if (isCondition(*n->blocks[0])) {
+                out.insert(int(out.nodes.size()), std::move(n));
+            } else {
+                for (auto& k : n->blocks[0]->nodes) out.insert(int(out.nodes.size()), std::move(k));
+            }
             return true;
         }
         if (c == '}') return false;
@@ -275,6 +283,22 @@ struct LatexParser {
             return true;
         }
         if (c == ')' || c == ']') { ++i; return true; }  // stray closer: drop
+        if (c == '/') {
+            // Plain-text division (pasted "x^3/10"): a fraction of the operands either side, as
+            // typing '/' would make. Operands stop at + − = < > , : · (implicit products bind tighter).
+            ++i;
+            auto n = Node::structure(NodeKind::Frac);
+            size_t start = out.nodes.size();
+            while (start > 0 && !isOperandBreak(*out.nodes[start - 1])) --start;
+            for (size_t k = start; k < out.nodes.size(); ++k)
+                n->blocks[0]->insert(int(n->blocks[0]->nodes.size()), std::move(out.nodes[k]));
+            out.nodes.erase(out.nodes.begin() + long(start), out.nodes.end());
+            while (!atDenominatorEnd(terminator)) {
+                if (!parseOne(*n->blocks[1], terminator)) break;
+            }
+            out.insert(int(out.nodes.size()), std::move(n));
+            return true;
+        }
         if (c == '|') {
             ++i;
             auto n = Node::paren('|', '|');
@@ -289,11 +313,50 @@ struct LatexParser {
         return true;
     }
 
+    static bool isBreakChar(char32_t c) {
+        return c == '+' || c == '-' || c == sym::Minus || c == '=' || c == '<' || c == '>' || c == ',' || c == ':' ||
+               c == sym::Le || c == sym::Ge || c == sym::CDot || c == sym::Times || c == '/';
+    }
+    static bool isOperandBreak(const Node& n) { return n.kind == NodeKind::Symbol && isBreakChar(n.ch); }
+
+    // True where a plain-text denominator ends: an operator, a closer, or the end of the group.
+    bool atDenominatorEnd(char32_t terminator) {
+        skipSpace();
+        if (eof()) return true;
+        char32_t c = s[i];
+        if ((terminator && c == terminator) || c == '}' || c == ')' || c == ']' || c == '*') return true;
+        if (isBreakChar(c)) return true;
+        if (c == '\\') {
+            size_t save = i;
+            std::string cmd = readCommand();
+            i = save;
+            return cmd == "right" || cmd == "}" || cmd == "rbrace" || cmd == "cdot" || cmd == "times" ||
+                   cmd == "le" || cmd == "leq" || cmd == "ge" || cmd == "geq";
+        }
+        return false;
+    }
+
+    // Top-level ':' or comparison: the contents of a Desmos piecewise / restriction.
+    static bool isCondition(const Block& b) {
+        for (auto& n : b.nodes) {
+            if (n->kind != NodeKind::Symbol) continue;
+            char32_t c = n->ch;
+            if (c == ':' || c == '<' || c == '>' || c == '=' || c == sym::Le || c == sym::Ge) return true;
+        }
+        return false;
+    }
+
+    bool atRbrace() const {
+        if (s.compare(i, 7, U"\\rbrace") != 0) return false;
+        return i + 7 >= s.size() || s[i + 7] > 127 || !std::isalpha(int(s[i + 7]));
+    }
+
     void parseSequence(Block& out, char32_t terminator, bool untilBraceClose = false) {
         while (!eof()) {
             if (untilBraceClose) {
                 skipSpace();
                 if (i + 1 < s.size() && s[i] == '\\' && s[i + 1] == '}') { i += 2; return; }
+                if (atRbrace()) { i += 7; return; }
             }
             if (!parseOne(out, terminator)) return;
         }

@@ -120,6 +120,12 @@ private:
     float m_pressX = 0, m_pressY = 0;
     bool m_longPressFired = false;
     std::vector<std::vector<FieldBox>> m_boxes;
+    // Horizontal scroll of the focused math field when its content is wider than the box (MathQuill
+    // scrolls to keep the caret visible). Other fields draw from their start.
+    Focus m_scrollFocus;
+    float m_scrollX = 0;
+    void updateFieldScroll();
+    float fieldScroll(const Focus& f) const { return f == m_scrollFocus ? m_scrollX : 0; }
 
     float contentX(const ExpressionRow& r) const { return area.x + theme::TabWidth + theme::MathLeftPad + r.indent; }
     float contentRight() const { return area.right() - theme::MathRightPad; }
@@ -156,6 +162,7 @@ private:
     void moveBlock(int from, int dropBefore);
 public:
     bool reordering() const { return m_dragRow >= 0; }
+    float focusedFieldScroll() const { return fieldScroll(focus); }
     friend class App;
 };
 

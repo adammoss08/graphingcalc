@@ -109,3 +109,21 @@ TEST(app3d_save_load_keeps_mode) {
     CHECK(b.is3D());
     CHECK(b.list().rows[0].analysis.graph == GraphKind::Surface);
 }
+
+// Dark mode: the graph paper clears dark, black curves draw light, and switching back restores
+// the light palette.
+TEST(app_dark_mode_paper_and_curves) {
+    App& a = freshApp3d();
+    a.pasteText("y=0");
+    a.setDarkMode(true);
+    const calc::Rect& r = a.graph().area;
+    uint32_t paper = pixelAt(a, r.x + r.w * 0.317f + 0.5f, r.y + r.h * 0.283f + 0.5f);
+    int pb = paper & 0xff, pg = (paper >> 8) & 0xff, pr = (paper >> 16) & 0xff;
+    CHECK(pr < 60 && pg < 60 && pb < 60);
+    CHECK(theme::onPaper(theme::CurveBlack).r > 0.8f);
+    CHECK(theme::onPaper(theme::CurveRed).r == theme::CurveRed.r);
+    a.setDarkMode(false);
+    uint32_t light = pixelAt(a, r.x + r.w * 0.317f + 0.5f, r.y + r.h * 0.283f + 0.5f);
+    CHECK((light & 0xff) > 200);
+    CHECK(theme::onPaper(theme::CurveBlack).r == 0);
+}

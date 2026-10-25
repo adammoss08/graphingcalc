@@ -1,6 +1,8 @@
 #pragma once
 // Design tokens. Every colour, size, font and timing used by the UI lives here and mirrors
 // docs/DESMOS_SPEC.md. Do not put literals in drawing code; add a token instead.
+// Colours that differ in dark mode are plain (non-constexpr) variables holding the light values;
+// setDarkMode() swaps them (Theme.cpp). Read them at draw time, never cache them in constants.
 #include <cstdint>
 
 namespace calc {
@@ -21,21 +23,23 @@ enum class Font : uint8_t { Ui, UiBold, MathItalic, MathRoman, HeaderLight, Coun
 namespace theme {
 
 // ---- palette ----
-inline constexpr Color White = Color::hex(0xFFFFFF);
+inline constexpr Color White = Color::hex(0xFFFFFF);   // literal white (text/checks on Accent)
 inline constexpr Color Black = Color::hex(0x000000);
+inline Color Paper = Color::hex(0xFFFFFF);             // backgrounds: panel, popovers, buttons, keys
+inline Color Ink = Color::hex(0x000000);               // foreground lines on Paper (grid, axes, tracks)
 inline constexpr Color Accent = Color::hex(0x2F72DC);          // --dcg-accent-color
-inline constexpr Color Text = Color::hex(0x000000);
-inline constexpr Color TextSecondary = Color::hex(0x000000, 0.65f);
-inline constexpr Color TextMuted = Color::hex(0x999999);
-inline constexpr Color Border = Color::hex(0x000000, 0.2f);
-inline constexpr Color RowBorder = Color::hex(0xCECECE, 0.8f);
-inline constexpr Color TabBg = Color::hex(0xEEEEEE);
-inline constexpr Color TabBorder = Color::hex(0x000000, 0.06f);
+inline Color Text = Color::hex(0x000000);
+inline Color TextSecondary = Color::hex(0x000000, 0.65f);
+inline Color TextMuted = Color::hex(0x999999);
+inline Color Border = Color::hex(0x000000, 0.2f);
+inline Color RowBorder = Color::hex(0xCECECE, 0.8f);
+inline Color TabBg = Color::hex(0xEEEEEE);
+inline Color TabBorder = Color::hex(0x000000, 0.06f);
 inline constexpr Color Error = Color::hex(0xE15855);
-inline constexpr Color HoverOverlay = Color::hex(0x000000, 0.06f);
-inline constexpr Color PressedOverlay = Color::hex(0x000000, 0.12f);
-inline constexpr Color PoiGray = Color::hex(0x808080);
-inline constexpr Color LabelHanging = Color::hex(0x999999);
+inline Color HoverOverlay = Color::hex(0x000000, 0.06f);
+inline Color PressedOverlay = Color::hex(0x000000, 0.12f);
+inline Color PoiGray = Color::hex(0x808080);
+inline Color LabelHanging = Color::hex(0x999999);
 
 // Curve colour cycle (Desmos skips orange in the cycle).
 inline constexpr Color CurveRed = Color::hex(0xC74440);
@@ -49,6 +53,25 @@ inline constexpr Color ColorPalette[] = {CurveRed, CurveBlue, CurveGreen, CurveP
 inline constexpr int ColorCycleCount = 5;
 inline constexpr int ColorPaletteCount = 6;
 
+// ---- small icons and fills (were file-local) ----
+inline constexpr Color WarningIcon = Color::hex(0xE8A13A);   // (observed) Desmos warning triangle
+inline Color EmptyBlock = Color::hex(0x000000, 0.1f);        // empty math slot
+inline Color FolderIcon = Color::hex(0x000000, 0.55f);
+inline Color EvalBg = Color::hex(0x000000, 0.04f);           // "= value" box
+inline Color SliderTrack = Color::hex(0x000000, 0.18f);
+inline Color DeleteIcon = Color::hex(0x000000, 0.45f);
+inline Color KeypadBg = Color::hex(0xDBDDE1);
+inline Color KeyBg = Color::hex(0xFFFFFF);
+inline Color DarkKeyBg = Color::hex(0xC8CBD1);
+inline Color KeyShadow = Color::hex(0x000000, 0.18f);
+
+// ---- dark mode ----
+void setDarkMode(bool on);
+bool darkMode();
+// A curve/point colour as drawn on the graph paper: in dark mode near-black colours (the "black"
+// in the colour cycle) draw light so they stay visible. Saved colours never change.
+Color onPaper(Color c);
+
 // ---- app header (dark bar) ----
 inline constexpr float HeaderHeight = 46;
 inline constexpr Color HeaderBg = Color::hex(0x2A2A2A);
@@ -61,12 +84,12 @@ inline constexpr float HeaderTrafficLightInset = 78;   // room for the window bu
 inline constexpr float PanelDefaultWidth = 400;
 inline constexpr float PanelMinWidth = 300;
 inline constexpr float TopBarHeight = 48;
-inline constexpr Color TopBarTop = Color::hex(0xFCFCFC);
-inline constexpr Color TopBarBottom = Color::hex(0xEAEAEA);
+inline Color TopBarTop = Color::hex(0xFCFCFC);
+inline Color TopBarBottom = Color::hex(0xEAEAEA);
 inline constexpr float IconButtonSize = 40;
 inline constexpr float IconButtonRadius = 5;
 inline constexpr float IconStroke = 1.6f;
-inline constexpr Color IconColor = Color::hex(0x000000, 0.8f);
+inline Color IconColor = Color::hex(0x000000, 0.8f);
 
 inline constexpr float RowMinHeight = 58;
 inline constexpr float RowPadBottom = 6;
@@ -75,6 +98,7 @@ inline constexpr float TabIndexSize = 10.4f;          // 65% of 16
 inline constexpr float IconDiameter = 29;
 inline constexpr float IconCenterY = 28;
 inline constexpr float MathLeftPad = 10;
+inline constexpr float FieldScrollMargin = 16;        // caret kept this far inside a scrolled field
 inline constexpr float MathRightPad = 34;             // room for the delete ×
 inline constexpr float MathSize = 18.4f;              // 115% of 16
 inline constexpr float NewRowHeight = 54;
@@ -104,11 +128,11 @@ inline constexpr float TableHeaderHeight = 34;
 inline constexpr float TableCellHeight = 32;
 inline constexpr float TableColumnWidth = 100;
 inline constexpr float TableTextSize = 16;
-inline constexpr Color TableHeaderBg = Color::hex(0xF4F4F4);
-inline constexpr Color TableGrid = Color::hex(0xDDDDDD);
-inline constexpr Color ComputedText = Color::hex(0x000000, 0.45f);
+inline Color TableHeaderBg = Color::hex(0xF4F4F4);
+inline Color TableGrid = Color::hex(0xDDDDDD);
+inline Color ComputedText = Color::hex(0x000000, 0.45f);
 inline constexpr float ImageThumbSize = 56;
-inline constexpr Color Placeholder = Color::hex(0x000000, 0.35f);
+inline Color Placeholder = Color::hex(0x000000, 0.35f);
 inline constexpr float RegressionLabelSize = 11;
 
 // ---- math typesetting (MathQuill metrics, as em fractions) ----
@@ -120,13 +144,13 @@ inline constexpr float FracPadX = 0.2f;               // em
 inline constexpr float SupRaise = 0.5f;               // em of parent
 inline constexpr float SubDrop = 0.3f;
 inline constexpr float OpPad = 0.2f;                  // em around binary operators
-inline constexpr Color CursorColor = Color::hex(0x000000);
-inline constexpr Color SelectionColor = Color::hex(0xB4D5FE);
-inline constexpr Color GhostBracket = Color::hex(0x000000, 0.25f);
+inline Color CursorColor = Color::hex(0x000000);
+inline Color SelectionColor = Color::hex(0xB4D5FE);
+inline Color GhostBracket = Color::hex(0x000000, 0.25f);
 inline constexpr float CursorBlinkSeconds = 0.5f;
 
 // ---- graph paper (Desmos graphSettings defaults) ----
-inline constexpr Color GraphBg = Color::hex(0xFFFFFF);
+inline Color GraphBg = Color::hex(0xFFFFFF);
 inline constexpr float MajorGridOpacity = 0.4f;
 inline constexpr float MinorGridOpacity = 0.12f;
 inline constexpr float AxisOpacity = 0.9f;
@@ -173,8 +197,8 @@ inline constexpr float ZoomButtonSize = 36;
 inline constexpr float ZoomButtonRadius = 4;
 inline constexpr float ZoomButtonInset = 10;
 inline constexpr float ZoomButtonGap = 8;
-inline constexpr Color ZoomButtonBorder = Color::hex(0x000000, 0.2f);
-inline constexpr Color ShadowColor = Color::hex(0x000000, 0.12f);
+inline Color ZoomButtonBorder = Color::hex(0x000000, 0.2f);
+inline Color ShadowColor = Color::hex(0x000000, 0.12f);
 inline constexpr float ShadowBlur = 3;
 
 // ---- tooltip / coordinate labels ----
@@ -182,7 +206,7 @@ inline constexpr float TooltipRadius = 4;
 inline constexpr float TooltipPadX = 8;
 inline constexpr float TooltipPadY = 5;
 inline constexpr float TooltipTextSize = 14;
-inline constexpr Color TooltipBg = Color::hex(0x000000, 0.75f);
+inline Color TooltipBg = Color::hex(0x000000, 0.75f);
 inline constexpr Color TooltipText = Color::hex(0xFFFFFF);
 inline constexpr float CoordLabelSize = 14;
 

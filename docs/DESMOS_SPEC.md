@@ -110,3 +110,12 @@ ln/log, e^x, roots, d/dx, f′, ∑ ∏ ∫, mod/floor/round/ceil/min/max/total/
   light-grey box edges; faint floor grid on z = 0; dark x/y/z axes with letters past the ends and
   grey tick numbers every second grid step. Grid step is 1-2-5, about ten intervals across the box.
 - Not yet matched: implicit surfaces, translucency, trace/POIs, point dragging in 3D.
+
+## Editing details (1.2.1)
+- A math field wider than its box scrolls horizontally to keep the caret visible (MathQuill sets
+  scrollLeft); unfocused fields show their start.
+- Paste: `\left\{…\right\}`, `\{…\}`, `\lbrace…\rbrace` and plain `{x>0:…}` all give a brace (piecewise /
+  restriction). Plain `a/b` becomes a fraction of the operands either side (operands stop at
+  + − = < > , : ·), so `x^3/10` pastes as \frac{x^3}{10}.
+- Dark mode (View ▸ Appearance; follows macOS by default): dark paper and panel, light grid and
+  text; curve colours unchanged except black, which draws light.

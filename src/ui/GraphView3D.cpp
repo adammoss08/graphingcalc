@@ -109,7 +109,7 @@ void GraphView::buildFrame3D(const std::vector<GraphItem>& items, int selected, 
     sc.lines.clear();
 
     // Box edges, floor grid (z = 0), axes.
-    simd_float4 box = rgba(Black, Box3DOpacity);
+    simd_float4 box = rgba(Ink, Box3DOpacity);
     for (int k = 0; k < 4; ++k) {
         double sx = (k & 1) ? L : -L, sy = (k & 2) ? L : -L;
         sc.lines.push_back(line3(sx, sy, -L, sx, sy, L, Box3DWidth, box));
@@ -118,14 +118,14 @@ void GraphView::buildFrame3D(const std::vector<GraphItem>& items, int selected, 
     }
     if (settings.grid) {
         double step = sc.gridStep;
-        simd_float4 grid = rgba(Black, Floor3DGridOpacity);
+        simd_float4 grid = rgba(Ink, Floor3DGridOpacity);
         for (double v = std::ceil(-L / step) * step; v <= L * 1.0001; v += step) {
             if (std::fabs(v) < step * 1e-6) continue;  // the axes
             sc.lines.push_back(line3(v, -L, 0, v, L, 0, Floor3DGridWidth, grid));
             sc.lines.push_back(line3(-L, v, 0, L, v, 0, Floor3DGridWidth, grid));
         }
     }
-    simd_float4 axis = rgba(Black, Axis3DOpacity);
+    simd_float4 axis = rgba(Ink, Axis3DOpacity);
     if (settings.xAxis) sc.lines.push_back(line3(-L, 0, 0, L, 0, 0, Axis3DWidth, axis));
     if (settings.yAxis) sc.lines.push_back(line3(0, -L, 0, 0, L, 0, Axis3DWidth, axis));
     sc.lines.push_back(line3(0, 0, -L, 0, 0, L, Axis3DWidth, axis));

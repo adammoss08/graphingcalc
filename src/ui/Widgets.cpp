@@ -114,9 +114,9 @@ void floatingButton(Batch2D& b, const Rect& r, Icon icon, Interaction s, bool ro
     float rad = ZoomButtonRadius;
     if (roundTop && roundBottom) b.shadow({r.x, r.y + 1, r.w, r.h}, rad, ShadowBlur, ShadowColor);
     // Square corners where stacked: draw a rounded rect plus square patches.
-    b.rect(r, White, rad, 1, ZoomButtonBorder);
-    if (!roundTop) b.rect({r.x, r.y - 1, r.w, rad + 1}, White, 0, 0);
-    if (!roundBottom) b.rect({r.x, r.bottom() - rad, r.w, rad + 1}, White, 0, 0);
+    b.rect(r, Paper, rad, 1, ZoomButtonBorder);
+    if (!roundTop) b.rect({r.x, r.y - 1, r.w, rad + 1}, Paper, 0, 0);
+    if (!roundBottom) b.rect({r.x, r.bottom() - rad, r.w, rad + 1}, Paper, 0, 0);
     if (!roundTop || !roundBottom) {
         // side borders through the squared corners
         b.line(r.x + 0.5f, r.y, r.x + 0.5f, r.bottom(), 1, ZoomButtonBorder);
@@ -129,7 +129,7 @@ void floatingButton(Batch2D& b, const Rect& r, Icon icon, Interaction s, bool ro
 
 void floatingTextButton(Batch2D& b, const Rect& r, const std::string& label, Interaction s) {
     b.shadow({r.x, r.y + 1, r.w, r.h}, ZoomButtonRadius, ShadowBlur, ShadowColor);
-    b.rect(r, White, ZoomButtonRadius, 1, ZoomButtonBorder);
+    b.rect(r, Paper, ZoomButtonRadius, 1, ZoomButtonBorder);
     if (s == Interaction::Hovered || s == Interaction::Pressed) b.rect(r.inset(1), overlayFor(s), ZoomButtonRadius - 1);
     float w = b.atlas().measure(Font::Ui, label, ModeButtonTextSize);
     b.text(Font::Ui, ModeButtonTextSize, r.x + (r.w - w) * 0.5f, r.y + r.h * 0.5f + ModeButtonTextSize * 0.36f, label,

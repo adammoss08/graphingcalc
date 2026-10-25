@@ -6,6 +6,7 @@
 #import <QuartzCore/QuartzCore.h>
 #import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 
+#include "Log.hpp"
 #include "app/App.hpp"
 
 #include <sys/sysctl.h>
@@ -33,6 +34,7 @@ struct Options {
     bool view = false;
     double vx0 = -10, vx1 = 10, vy0 = -10, vy1 = 10;
     bool launchBench = false, check = false, perfHud = false, keypad = false, threeD = false;
+    int appearance = -1;   // --light / --dark override the saved View > Appearance for this run
     std::vector<std::string> images;
     int styleMenuRow = 0;
     std::vector<std::pair<float, float>> clicks;   // simulated clicks (screenshots / parity checks)
@@ -55,12 +57,16 @@ Options parseArgs(int argc, const char** argv) {
         else if (a == "--perf-hud") o.perfHud = true;
         else if (a == "--keypad") o.keypad = true;
         else if (a == "--3d") o.threeD = true;
+        else if (a == "--dark") o.appearance = 2;
+        else if (a == "--light") o.appearance = 1;
+        else if (a == "--verbose") calc::log::verbose() = true;
         else if (a == "--image") o.images.push_back(next());
         else if (a == "--style-menu") o.styleMenuRow = std::atoi(next().c_str());
         else if (a == "--click") {
             float cx, cy;
             if (std::sscanf(next().c_str(), "%f,%f", &cx, &cy) == 2) o.clicks.push_back({cx, cy});
         }
+        else if (a.rfind("--", 0) == 0) calc::log::error("unknown option %s (ignored)", a.c_str());
     }
     return o;
 }
@@ -105,6 +111,7 @@ void applyOptions(App& app, const Options& o) {
         if (!app.addImage(im)) std::fprintf(stderr, "couldn't load image %s\n", im.c_str());
     if (o.keypad) app.toggleKeypad();
     if (o.threeD && !app.is3D()) app.toggle3D();
+    if (o.appearance > 0) app.setDarkMode(o.appearance == 2);
     if (o.view) app.setView(o.vx0, o.vx1, o.vy0, o.vy1);
     if (o.select > 0) app.focusRow(o.select - 1);
     if (o.styleMenuRow > 0) app.openStyleMenu(o.styleMenuRow - 1, -1);
@@ -122,6 +129,8 @@ void applyOptions(App& app, const Options& o) {
 @property(nonatomic, strong) NSTimer* blinkTimer;
 @property(nonatomic) BOOL launchBench;
 @property(nonatomic) BOOL benchCheck;
+@property(nonatomic) NSInteger appearanceOverride;   // from --light/--dark (0 = none)
+- (void)applyAppearance;
 @end
 
 @implementation GraphView
@@ -372,6 +381,30 @@ void applyOptions(App& app, const Options& o) {
 - (void)zoomReset:(id)s { self.app->resetZoom(); [self requestFrame]; }
 - (void)toggleKeypad:(id)s { self.app->toggleKeypad(); [self requestFrame]; }
 - (void)toggle3D:(id)s { self.app->toggle3D(); [self requestFrame]; }
+
+// View > Appearance: 0 = follow macOS, 1 = light, 2 = dark (saved in user defaults). The window
+// itself is always dark-aqua for the header, so "system" reads NSApp.effectiveAppearance.
+static NSString* const kAppearanceKey = @"appearance";
+- (void)setAppearanceMode:(NSMenuItem*)item {
+    [[NSUserDefaults standardUserDefaults] setInteger:item.tag forKey:kAppearanceKey];
+    self.appearanceOverride = 0;
+    [self applyAppearance];
+}
+- (void)applyAppearance {
+    NSInteger mode = self.appearanceOverride ?: [[NSUserDefaults standardUserDefaults] integerForKey:kAppearanceKey];
+    bool dark = mode == 2;
+    if (mode == 0) {
+        NSAppearanceName best = [NSApp.effectiveAppearance
+            bestMatchFromAppearancesWithNames:@[ NSAppearanceNameAqua, NSAppearanceNameDarkAqua ]];
+        dark = [best isEqualToString:NSAppearanceNameDarkAqua];
+    }
+    if (dark != calc::theme::darkMode()) calc::log::info("appearance: %s", dark ? "dark" : "light");
+    self.app->setDarkMode(dark);
+    [self requestFrame];
+}
+- (void)observeValueForKeyPath:(NSString*)path ofObject:(id)obj change:(NSDictionary*)change context:(void*)ctx {
+    if ([path isEqualToString:@"effectiveAppearance"]) [self applyAppearance];
+}
 - (void)insertImage:(id)s { if (self.app->onRequestImage) self.app->onRequestImage(); }
 - (void)togglePerfHud:(id)s { self.app->perfHud = !self.app->perfHud; self.app->setNeedsRedraw(); [self requestFrame]; }
 - (void)newDocument:(id)s { self.app->newGraph(); [self requestFrame]; }
@@ -414,6 +447,10 @@ void applyOptions(App& app, const Options& o) {
     if (item.action == @selector(undo:)) return self.app->canUndo();
     if (item.action == @selector(redo:)) return self.app->canRedo();
     if (item.action == @selector(toggle3D:)) item.state = self.app->is3D() ? NSControlStateValueOn : NSControlStateValueOff;
+    if (item.action == @selector(setAppearanceMode:)) {
+        NSInteger mode = self.appearanceOverride ?: [[NSUserDefaults standardUserDefaults] integerForKey:kAppearanceKey];
+        item.state = item.tag == mode ? NSControlStateValueOn : NSControlStateValueOff;
+    }
     return YES;
 }
 
@@ -485,6 +522,16 @@ struct EarlyInit {
     [view addItem:[self item:@"Zoom Out" action:@selector(zoomOut:) key:@"-" mods:cmd]];
     [view addItem:[self item:@"Default Zoom" action:@selector(zoomReset:) key:@"0" mods:cmd]];
     [view addItem:[self item:@"3D Mode" action:@selector(toggle3D:) key:@"3" mods:cmd]];
+    NSMenu* appearance = [[NSMenu alloc] initWithTitle:@"Appearance"];
+    NSArray* names = @[ @"System", @"Light", @"Dark" ];
+    for (NSInteger k = 0; k < 3; ++k) {
+        NSMenuItem* it = [self item:names[k] action:@selector(setAppearanceMode:) key:@"" mods:0];
+        it.tag = k;
+        [appearance addItem:it];
+    }
+    NSMenuItem* appearanceItem = [[NSMenuItem alloc] initWithTitle:@"Appearance" action:nil keyEquivalent:@""];
+    appearanceItem.submenu = appearance;
+    [view addItem:appearanceItem];
     [view addItem:[NSMenuItem separatorItem]];
     [view addItem:[self item:@"Show Keypad" action:@selector(toggleKeypad:) key:@"k" mods:cmd]];
     [view addItem:[self item:@"Performance Overlay" action:@selector(togglePerfHud:) key:@"p"
@@ -535,6 +582,7 @@ struct EarlyInit {
     std::string err = self.early->error;
     if (o.launchBench) std::printf("  stage window (+early init joined) %.1f ms\n", processAgeMs());
     if (!self.early->ok) {
+        calc::log::error("init failed: %s", err.c_str());
         NSAlert* a = [[NSAlert alloc] init];
         a.messageText = @"GraphingCalc couldn't start";
         a.informativeText = [NSString stringWithUTF8String:err.c_str()];
@@ -561,6 +609,9 @@ struct EarlyInit {
         [v requestFrame];
     };
     applyOptions(*self.app, o);
+    self.view.appearanceOverride = o.appearance > 0 ? o.appearance : 0;
+    [self.view applyAppearance];
+    [NSApp addObserver:self.view forKeyPath:@"effectiveAppearance" options:0 context:nullptr];
     [self.view updateSize];
     [self.view startDisplayLink];
     [self.view renderNow];  // first frame before the window appears: no flash of empty content
@@ -601,6 +652,14 @@ struct EarlyInit {
 int main(int argc, const char** argv) {
     @autoreleasepool {
         Options opts = parseArgs(argc, argv);
+        NSSetUncaughtExceptionHandler([](NSException* e) {
+            calc::log::error("uncaught exception %s: %s", e.name.UTF8String, e.reason.UTF8String ?: "");
+            for (NSString* line in e.callStackSymbols) std::fprintf(stderr, "    %s\n", line.UTF8String);
+        });
+        calc::log::info("GraphingCalc %s, metallib %s", [[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"]
+                            ? [[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] UTF8String] : "?",
+                        metallibPath().empty() ? "MISSING" : metallibPath().c_str());
+        for (auto& e : opts.exprs) calc::log::info("--expr %s", e.c_str());
         if (opts.launchBench) std::printf("  stage main %.1f ms\n", processAgeMs());
         static App app;
 
@@ -631,7 +690,10 @@ int main(int argc, const char** argv) {
         static EarlyInit early;
         dispatch_group_async(early.group, dispatch_get_global_queue(QOS_CLASS_USER_INTERACTIVE, 0), ^{
             early.device = MTLCreateSystemDefaultDevice();
-            early.ok = app.init((__bridge MTL::Device*)early.device, metallibPath(), early.error);
+            early.ok = early.device && app.init((__bridge MTL::Device*)early.device, metallibPath(), early.error);
+            if (!early.device) early.error = "No Metal device";
+            calc::log::info("device %s, init %s (%.1f ms)", early.device ? early.device.name.UTF8String : "none",
+                            early.ok ? "ok" : early.error.c_str(), calc::log::sinceStartMs());
             if (early.ok) app.warmUp(2.0f);
         });
         NSApplication* nsapp = [NSApplication sharedApplication];

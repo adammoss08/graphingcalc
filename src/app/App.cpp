@@ -1,4 +1,5 @@
 #include "app/App.hpp"
+#include "Log.hpp"
 #include "app/GraphState.hpp"
 #include "math/Latex.hpp"
 #include "math/Parser.hpp"
@@ -270,6 +271,8 @@ void App::analyze() {
     for (size_t i = 0; i < rows.size(); ++i) {
         ExpressionRow& r = rows[i];
         if (r.type != RowType::Expression && r.type != RowType::Image) { r.analysis = RowAnalysis{}; continue; }
+        if (log::verbose() && res[i].error != r.analysis.error && !res[i].error.empty())
+            log::info("row %zu: %s", i + 1, res[i].error.c_str());
         r.analysis = std::move(res[i]);
         if (r.type != RowType::Expression) continue;
         // Slider bounds come from their fields (which may reference other definitions).
@@ -326,12 +329,14 @@ void App::rebuildItems() {
         if (rowGraphs(r)) {
             Style st = r.style;
             st.hidden = r.effectiveHidden;
+            st.color = theme::onPaper(st.color);   // display colour (black draws light in dark mode)
             m_items.push_back({&r.analysis, st, uint64_t(r.id) << 20, i});
         } else if (r.type == RowType::Table) {
             for (auto& col : r.columns) {
                 if (col.analysis.graph != GraphKind::Point) continue;
                 Style st = col.style;
                 st.hidden = st.hidden || folderHidden;
+                st.color = theme::onPaper(st.color);
                 m_items.push_back({&col.analysis, st, uint64_t(col.id) << 20, i, true});
             }
         } else if (r.type == RowType::Image && !r.effectiveHidden && r.imageTexture >= 0) {
@@ -811,6 +816,7 @@ void App::render(MTL::Texture* target, CA::MetalDrawable* drawable, bool wait) {
     m_renderer->render(f, target, drawable, wait);
     m_dirty = animating();
     m_lastFrameMs = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
+    if (m_lastFrameMs > 16.6) log::info("slow CPU frame: %.2f ms (sampling %.2f ms)", m_lastFrameMs, m_graph.lastSampleMs());
 }
 
 bool App::screenshot(const std::string& path) {

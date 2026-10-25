@@ -19,7 +19,8 @@ Desmos does. The spec is in `docs/DESMOS_SPEC.md`; update it when you learn some
 ```
 scripts/build.sh            # configure + build (Release w/ debug info) -> build/GraphingCalc.app
 scripts/test.sh             # build + run unit tests (tests/*.cpp, no external framework)
-scripts/run.sh              # build + launch the app
+scripts/run.sh              # build + launch with diagnostics (log in build/logs, crash summary;
+                            # CALC_VALIDATE=1 adds Metal API/shader validation, CALC_VERBOSE=0 quiets)
 scripts/screenshot.sh out.png [latex...]   # launch with expressions, capture window PNG, quit
 scripts/bench.sh [--check]  # perf benchmarks vs the targets below; --check exits 1 on a miss
 ```
@@ -74,12 +75,15 @@ Where the speed comes from, in priority order:
 ```
 src/app      Platform.mm  NSApp/NSWindow/CAMetalLayer view, events, menus, clipboard, file/image panels,
                           CLI flags (--expr --open --image --screenshot --size --select --hover --click
-                          --view --style-menu --keypad --3d --launch-bench --perf-hud). Device + App::init
+                          --view --style-menu --keypad --3d --dark --light --verbose --launch-bench --perf-hud). Device + App::init
                           run on a background thread during AppKit startup (launch target).
              App          owns everything; routes events (popovers > keypad > top bar > list > graph);
                           analysis (tables become synthetic rows), graph items, undo, frame building
              GraphState   Desmos-compatible graph JSON: expression/text/folder/table/image items
 src/ui       Theme.hpp    ALL colours, sizes, fonts, timings (design tokens). No literals elsewhere.
+                          Colours that change in dark mode are runtime variables (Theme.cpp swaps
+                          them; View > Appearance: System/Light/Dark). Use Paper/Ink, not White/Black,
+                          for backgrounds/lines; draw curve colours through onPaper().
              Widgets      shared icons + button styles (hover/pressed/disabled look identical everywhere)
              MathView     MathQuill-style typesetting (incl. ∑ ∏ ∫ d/dx), cursor/selection, hit testing
              RowModel     row types, Style, MathField/TextField, Focus {row, field, col, cell}
@@ -138,6 +142,10 @@ accessibility (audio trace). Tables: column resize and drag-select.
 3D mode: implicit surfaces (x²+y²+z²=9, needs marching cubes), trace/POIs/point dragging in 3D,
 surfaces of x or y (x = f(y, z)), translucent-surface sorting, camera not saved in files, 3D
 inequalities. The 2D/3D button and View ▸ 3D Mode (⌘3) switch modes; `graph.threeDMode` is saved.
+
+Diagnostics: `src/Log.hpp` (`log::error` always, `log::info` when verbose). GPU command-buffer
+failures, row errors and slow frames are logged; never swallow an error silently.
+Version: `project(GraphingCalc VERSION x.y.z)` in CMakeLists.txt feeds the bundle's version keys.
 
 ## Rules
 - **Design consistency:** every colour, size, radius, font size and animation duration comes from

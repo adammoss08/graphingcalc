@@ -38,11 +38,11 @@ public:
 
     // Text at a baseline. Returns the advance width in points. Glyphs snap to device pixels.
     float text(Font f, float sizePt, float x, float baseline, const std::u32string& s, Color c,
-               float halo = 0, Color haloColor = theme::White);
+               float halo = 0, Color haloColor = theme::GraphBg);
     float text(Font f, float sizePt, float x, float baseline, const std::string& utf8, Color c,
-               float halo = 0, Color haloColor = theme::White);
+               float halo = 0, Color haloColor = theme::GraphBg);
     void glyph(Font f, float sizePt, float x, float baseline, char32_t ch, Color c, float halo = 0,
-               Color haloColor = theme::White);
+               Color haloColor = theme::GraphBg);
 
 private:
     TextAtlas& m_atlas;

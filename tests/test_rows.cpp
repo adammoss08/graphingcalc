@@ -323,3 +323,26 @@ TEST(rows_point_labels_save_and_interpolate) {
     CHECK(L(b).rows[1].style.showLabel);
     CHECK_EQ(L(b).rows[1].label.utf8(), std::string("A at ${a}"));
 }
+
+// A field wider than its box scrolls to keep the caret visible (MathQuill), and back at Home.
+TEST(rows_long_expression_scrolls_to_caret) {
+    App& a = fresh();
+    a.setSize(700, 600, 2);
+    a.pasteText("y=\\sin\\left(x\\right)+\\cos\\left(2x\\right)+\\sin\\left(3x\\right)+\\cos\\left(4x\\right)+"
+                "\\sin\\left(5x\\right)+\\cos\\left(6x\\right)+\\sin\\left(7x\\right)+\\cos\\left(8x\\right)");
+    frame(a);
+    const ExpressionRow& r = L(a).rows[0];
+    float boxW = L(a).area.right() - theme::MathRightPad - (L(a).area.x + theme::TabWidth + theme::MathLeftPad);
+    CHECK(r.layout.width() > boxW);                 // really overflows
+    float scroll = L(a).focusedFieldScroll();
+    CHECK(scroll > 0);
+    float cx, top, bot;
+    CHECK(r.layout.caretRect(r.tree.cursor(), cx, top, bot));
+    CHECK(cx - scroll <= boxW && cx - scroll >= 0); // caret inside the box
+    a.key(Key::Home, {});
+    frame(a);
+    CHECK_EQ(L(a).focusedFieldScroll(), 0.0f);
+    a.key(Key::End, {});
+    frame(a);
+    CHECK_NEAR(L(a).focusedFieldScroll(), scroll, 0.5);
+}

@@ -12,7 +12,6 @@ using namespace theme;
 namespace {
 
 constexpr float kTriangleSize = 10;
-constexpr Color kFolderColor = Color::hex(0x000000, 0.55f);
 
 // Word-wraps `t` to `width`; returns [start, end) index pairs per line.
 std::vector<std::pair<int, int>> wrapLines(TextAtlas& a, const std::u32string& t, float width) {
@@ -48,7 +47,7 @@ void drawFolderIcon(Batch2D& b, float cx, float cy, Color c, bool filled) {
 
 void drawImageIcon(Batch2D& b, float cx, float cy, Color c, bool visible) {
     Rect frame{cx - 9, cy - 7, 18, 14};
-    b.rect(frame, visible ? White : Color{0, 0, 0, 0}, 2, 1.5f, c);
+    b.rect(frame, visible ? Paper : Color{0, 0, 0, 0}, 2, 1.5f, c);
     b.line(cx - 6, cy + 4, cx - 1, cy - 1, 1.5f, c);
     b.line(cx - 1, cy - 1, cx + 2, cy + 2, 1.5f, c);
     b.line(cx + 2, cy + 2, cx + 6, cy - 3, 1.5f, c);
@@ -132,7 +131,7 @@ void ExpressionList::drawMisc(Batch2D& b, int i, float top, bool sel, bool curso
         break;
     }
     case RowType::Folder: {
-        drawFolderIcon(b, icx, icy, sel ? White : (r.hidden ? kFolderColor.withAlpha(0.3f) : kFolderColor), !r.hidden);
+        drawFolderIcon(b, icx, icy, sel ? White : (r.hidden ? FolderIcon.withAlpha(0.3f) : FolderIcon), !r.hidden);
         // collapse triangle
         float tx = contentX(r) + kTriangleSize * 0.5f, ty = top + MiscRowMinHeight * 0.5f, s = kTriangleSize * 0.5f;
         if (r.collapsed) {

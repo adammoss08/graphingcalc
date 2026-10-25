@@ -10,7 +10,6 @@ namespace calc {
 using namespace theme;
 
 namespace {
-constexpr Color kDeleteColor = Color::hex(0x000000, 0.45f);
 constexpr double kLongPressSeconds = 0.45;
 }
 
@@ -251,6 +250,36 @@ void ExpressionList::layout(TextAtlas& a) {
         y += r.h;
     }
     scrollBy(0);
+    updateFieldScroll();
+}
+
+void ExpressionList::updateFieldScroll() {
+    if (!(focus == m_scrollFocus)) {
+        m_scrollFocus = focus;
+        m_scrollX = 0;
+    }
+    const FieldBox* fb = focus.row >= 0 ? boxFor(focus.row, focus) : nullptr;
+    const MathTree* t = focus.row >= 0 ? treeFor(focus) : nullptr;
+    const MathLayout* l = nullptr;
+    if (fb && t) {
+        if (focus.field == Field::Main) {
+            l = &rows[focus.row].layout;
+        } else if (MathField* mf = fieldFor(focus)) {
+            mf->relayout(*atlas, fb->em);
+            l = &mf->layout;
+        }
+    }
+    float cx, ctop, cbot;
+    if (!l || !l->caretRect(t->cursor(), cx, ctop, cbot)) {
+        m_scrollX = 0;
+        return;
+    }
+    float visible = fb->rect.w - (fb->underline ? 4 : 0);
+    float margin = std::min(theme::FieldScrollMargin, visible * 0.25f);
+    if (cx - m_scrollX > visible - margin) m_scrollX = cx - (visible - margin);
+    if (cx - m_scrollX < margin) m_scrollX = cx - margin;
+    // Never scroll past the end of the content, nor before its start.
+    m_scrollX = std::clamp(m_scrollX, 0.0f, std::max(0.0f, l->width() + 2 - visible));
 }
 
 float ExpressionList::contentHeight() const {
@@ -300,7 +329,7 @@ void ExpressionList::drawFieldBox(Batch2D& b, int row, const FieldBox& fb, float
         else b.line(fb.rect.x, uy - 0.5f, fb.rect.right(), uy - 0.5f, 1, Border);
     }
     b.pushClip({fb.rect.x - 2, top + fb.rect.y - 4, fb.rect.w + 4, fb.rect.h + 8});
-    float x = fb.rect.x + (fb.underline ? 2 : 0);
+    float x = fb.rect.x + (fb.underline ? 2 : 0) - fieldScroll(f);
     l->draw(b, x, top + fb.baseline, color, t, focused, cursorVisible);
     b.popClip();
 }
@@ -337,7 +366,7 @@ void ExpressionList::draw(Batch2D& b, bool cursorVisible) const {
         if (hover || sel) {
             bool hot = hover && m_hover.kind == ListHit::Delete;
             widgets::drawIcon(b, widgets::Icon::Close, area.right() - 18, top + IconCenterY, DeleteSize,
-                              hot ? Text : kDeleteColor);
+                              hot ? Text : DeleteIcon);
         }
         // Borders: row separator; selected rows get the accent frame.
         if (sel) {
@@ -352,7 +381,7 @@ void ExpressionList::draw(Batch2D& b, bool cursorVisible) const {
     if (m_dragRow >= 0) {
         int end = rows[m_dragRow].type == RowType::Folder ? folderEnd(m_dragRow) : m_dragRow + 1;
         for (int i = m_dragRow; i < end; ++i)
-            if (rows[i].visibleInList) b.rect({area.x, rowTopOnScreen(i), area.w, rows[i].h}, White.withAlpha(0.55f));
+            if (rows[i].visibleInList) b.rect({area.x, rowTopOnScreen(i), area.w, rows[i].h}, Paper.withAlpha(0.55f));
         if (m_dropIndex >= 0) {
             float y = m_dropIndex < int(rows.size()) ? rowTopOnScreen(m_dropIndex) : area.y + contentHeight() - NewRowHeight - scrollY;
             float indent = 0;
@@ -550,7 +579,7 @@ bool ExpressionList::mouseDown(float x, float y, int clicks, Mods m) {
         if (h.field == Field::Main) l = &rows[h.row].layout;
         else if (MathField* mf = fieldFor(f)) { mf->relayout(*atlas, fb->em); l = &mf->layout; }
         if (!l) return true;
-        float lx = x - fb->rect.x - (fb->underline ? 2 : 0), ly = y - (rowTopOnScreen(h.row) + fb->baseline);
+        float lx = x - fb->rect.x - (fb->underline ? 2 : 0) + fieldScroll(f), ly = y - (rowTopOnScreen(h.row) + fb->baseline);
         if (clicks >= 2) {
             t->selectAll();
         } else {
@@ -589,7 +618,7 @@ bool ExpressionList::mouseDragged(float x, float y) {
         const MathLayout* l = focus.field == Field::Main ? &rows[focus.row].layout
                                                          : (fieldFor(focus) ? &fieldFor(focus)->layout : nullptr);
         if (!l) return false;
-        float lx = x - fb->rect.x - (fb->underline ? 2 : 0), ly = y - (rowTopOnScreen(focus.row) + fb->baseline);
+        float lx = x - fb->rect.x - (fb->underline ? 2 : 0) + fieldScroll(focus), ly = y - (rowTopOnScreen(focus.row) + fb->baseline);
         t->select(t->anchorOrCursor(), l->hitTest(lx, ly));
         rows[focus.row].layoutDirty = true;
         return true;

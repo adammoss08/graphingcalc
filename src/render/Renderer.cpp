@@ -1,4 +1,5 @@
 #include "render/Renderer.hpp"
+#include "Log.hpp"
 #include "graph/ImplicitCpu.hpp"
 #include "render/RenderFormats.hpp"
 #include "render/Renderer3D.hpp"
@@ -357,7 +358,7 @@ void Renderer::render(const FrameDesc& f, MTL::Texture* target, CA::MetalDrawabl
     auto* a0 = rpd->colorAttachments()->object(0);
     a0->setTexture(target);
     a0->setLoadAction(MTL::LoadActionClear);
-    a0->setClearColor(MTL::ClearColor(1, 1, 1, 1));
+    a0->setClearColor(MTL::ClearColor(theme::GraphBg.r, theme::GraphBg.g, theme::GraphBg.b, 1));  // the graph paper
     a0->setStoreAction(MTL::StoreActionStore);
     auto* a1 = rpd->colorAttachments()->object(1);
     a1->setTexture(I.tileBase);
@@ -484,6 +485,17 @@ void Renderer::render(const FrameDesc& f, MTL::Texture* target, CA::MetalDrawabl
     cb->addCompletedHandler([impl](MTL::CommandBuffer* done) {
         double ms = (done->GPUEndTime() - done->GPUStartTime()) * 1000.0;
         impl->gpuMs.store(ms);
+        if (done->status() == MTL::CommandBufferStatusError) {
+            // A GPU fault (timeout, page fault, invalid resource) would otherwise just drop the frame.
+            static std::atomic<int> reported{0};
+            if (reported.fetch_add(1) < 20) {
+                NS::Error* e = done->error();
+                log::error("GPU command buffer failed (code %ld): %s", e ? long(e->code()) : 0L,
+                           e && e->localizedDescription() ? e->localizedDescription()->utf8String() : "unknown");
+            }
+        } else if (ms > 16.6) {
+            log::info("slow GPU frame: %.2f ms", ms);
+        }
         impl->ring.end();
     });
     cb->commit();

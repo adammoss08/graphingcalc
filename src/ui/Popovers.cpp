@@ -22,9 +22,9 @@ float sliderT(float v, float lo, float hi) { return std::clamp((v - lo) / (hi - 
 
 void drawTrack(Batch2D& b, const Rect& tr, float t, Color c) {
     float cy = tr.y + tr.h * 0.5f;
-    b.rect({tr.x, cy - 1.5f, tr.w, 3}, Black.withAlpha(0.15f), 1.5f);
+    b.rect({tr.x, cy - 1.5f, tr.w, 3}, Ink.withAlpha(0.15f), 1.5f);
     b.rect({tr.x, cy - 1.5f, tr.w * t, 3}, c, 1.5f);
-    b.circle(tr.x + tr.w * t, cy, 7, White, 1.5f, c);
+    b.circle(tr.x + tr.w * t, cy, 7, Paper, 1.5f, c);
 }
 
 void drawCheck(Batch2D& b, const Rect& box, bool on) {
@@ -33,7 +33,7 @@ void drawCheck(Batch2D& b, const Rect& box, bool on) {
         b.line(box.x + 3.5f, box.y + 8.5f, box.x + 6.5f, box.y + 11.5f, 2, White);
         b.line(box.x + 6.5f, box.y + 11.5f, box.x + 12.5f, box.y + 4.5f, 2, White);
     } else {
-        b.rect(box, White, 3, 1.5f, Black.withAlpha(0.35f));
+        b.rect(box, Paper, 3, 1.5f, Ink.withAlpha(0.35f));
     }
 }
 
@@ -107,14 +107,15 @@ void StyleMenu::draw(Batch2D& b, const Style& s, float viewW, float viewH) const
     if (!open) return;
     Layout L = layout(viewW, viewH);
     b.shadow({L.box.x, L.box.y + 3, L.box.w, L.box.h}, kRadius, 10, ShadowColor.withAlpha(0.25f));
-    b.rect(L.box, White, kRadius, 1, Border);
+    b.rect(L.box, Paper, kRadius, 1, Border);
+    Color sc = onPaper(s.color);   // as drawn on the graph (black shows light in dark mode)
     for (int i = 0; i < ColorPaletteCount; ++i) {
         const Rect& r = L.swatches[i];
         Color c = ColorPalette[i];
         bool selected = std::fabs(c.r - s.color.r) + std::fabs(c.g - s.color.g) + std::fabs(c.b - s.color.b) < 0.01f;
         float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
-        if (selected) b.circle(cx, cy, r.w * 0.5f + 3, White, 2, c);
-        b.circle(cx, cy, r.w * 0.5f - (selected ? 2 : 0), c);
+        if (selected) b.circle(cx, cy, r.w * 0.5f + 3, Paper, 2, onPaper(c));
+        b.circle(cx, cy, r.w * 0.5f - (selected ? 2 : 0), onPaper(c));
     }
     auto label = [&](const Rect& track, const char* text) {
         b.text(Font::Ui, 13, track.x - 70, track.y + 14, std::string(text), TextSecondary);
@@ -129,33 +130,33 @@ void StyleMenu::draw(Batch2D& b, const Style& s, float viewW, float viewH) const
         for (int i = 0; i < 3; ++i) {
             const Rect& r = L.lineStyles[i];
             bool on = int(s.line) == i;
-            b.rect(r, on ? Accent.withAlpha(0.12f) : White, 5, 1, on ? Accent : Border);
+            b.rect(r, on ? Accent.withAlpha(0.12f) : Paper, 5, 1, on ? Accent : Border);
             float cy = r.y + r.h * 0.5f, x0 = r.x + 8, x1 = r.right() - 8;
-            if (i == 0) b.line(x0, cy, x1, cy, 2.5f, s.color);
-            else if (i == 1) for (float x = x0; x < x1; x += 10) b.line(x, cy, std::min(x + 5, x1), cy, 2.5f, s.color);
-            else for (float x = x0 + 1; x <= x1; x += 6) b.circle(x, cy, 1.4f, s.color);
+            if (i == 0) b.line(x0, cy, x1, cy, 2.5f, sc);
+            else if (i == 1) for (float x = x0; x < x1; x += 10) b.line(x, cy, std::min(x + 5, x1), cy, 2.5f, sc);
+            else for (float x = x0 + 1; x <= x1; x += 6) b.circle(x, cy, 1.4f, sc);
         }
         label(L.widthTrack, "Thickness");
-        drawTrack(b, L.widthTrack, sliderT(s.lineWidth, 0, kMaxLineWidth), s.color);
+        drawTrack(b, L.widthTrack, sliderT(s.lineWidth, 0, kMaxLineWidth), sc);
         label(L.opacityTrack, "Opacity");
-        drawTrack(b, L.opacityTrack, s.lineOpacity, s.color);
+        drawTrack(b, L.opacityTrack, s.lineOpacity, sc);
     }
     if (showFill) {
         label(L.fillTrack, "Fill");
-        drawTrack(b, L.fillTrack, s.fillOpacity, s.color);
+        drawTrack(b, L.fillTrack, s.fillOpacity, sc);
     }
     if (showPoints) {
         for (int i = 0; i < 3; ++i) {
             const Rect& r = L.pointStyles[i];
             bool on = int(s.point) == i;
-            b.rect(r, on ? Accent.withAlpha(0.12f) : White, 5, 1, on ? Accent : Border);
+            b.rect(r, on ? Accent.withAlpha(0.12f) : Paper, 5, 1, on ? Accent : Border);
             float cx = r.x + r.w * 0.5f, cy = r.y + r.h * 0.5f;
-            if (i == 0) b.circle(cx, cy, 5, s.color);
-            else if (i == 1) b.circle(cx, cy, 5, White, 2, s.color);
-            else { b.line(cx - 4, cy - 4, cx + 4, cy + 4, 2, s.color); b.line(cx - 4, cy + 4, cx + 4, cy - 4, 2, s.color); }
+            if (i == 0) b.circle(cx, cy, 5, sc);
+            else if (i == 1) b.circle(cx, cy, 5, Paper, 2, sc);
+            else { b.line(cx - 4, cy - 4, cx + 4, cy + 4, 2, sc); b.line(cx - 4, cy + 4, cx + 4, cy - 4, 2, sc); }
         }
         label(L.sizeTrack, "Size");
-        drawTrack(b, L.sizeTrack, sliderT(s.pointSize, kMinPointSize, kMaxPointSize), s.color);
+        drawTrack(b, L.sizeTrack, sliderT(s.pointSize, kMinPointSize, kMaxPointSize), sc);
     }
     if (showLabelToggle) {
         drawCheck(b, L.labelToggle, s.showLabel);
@@ -246,7 +247,7 @@ void AddMenu::draw(Batch2D& b) const {
     if (!open) return;
     Rect r = rect();
     b.shadow({r.x, r.y + 3, r.w, r.h}, 6, 10, ShadowColor.withAlpha(0.25f));
-    b.rect(r, White, 6, 1, Border);
+    b.rect(r, Paper, 6, 1, Border);
     for (int i = 0; i < Count; ++i) {
         Rect it{r.x + 4, r.y + 4 + i * kAddItemH, r.w - 8, kAddItemH};
         if (i == m_hover) b.rect(it, HoverOverlay, 4);

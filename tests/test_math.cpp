@@ -450,3 +450,29 @@ TEST(three_d_classification) {
     auto two = analyze({"z=5", "y=zx"});
     CHECK(two[0].kind == RowKind::Slider);
 }
+
+// Pasted braces: Desmos LaTeX, typed-text braces and \lbrace all become a brace bracket; plain
+// LaTeX groups stay transparent.
+TEST(latex_paste_keeps_piecewise_braces) {
+    const char* piece = "y=\\left\\{x>0:x,-x\\right\\}";
+    CHECK_EQ(latexOf(fromLatex("y=\\left\\{x>0:x,-x\\right\\}")), std::string(piece));
+    CHECK_EQ(latexOf(fromLatex("y=\\{x>0:x,-x\\}")), std::string(piece));
+    CHECK_EQ(latexOf(fromLatex("y={x>0:x,-x}")), std::string(piece));
+    CHECK_EQ(latexOf(fromLatex("y=\\lbrace x>0:x,-x\\rbrace")), std::string(piece));
+    CHECK_EQ(latexOf(fromLatex("y=x{x<3}")), std::string("y=x\\left\\{x<3\\right\\}"));
+    CHECK_EQ(latexOf(fromLatex("{x}^{2}+{a}")), std::string("x^{2}+a"));
+    auto res = analyze({"y={x>0:x,-x}"});
+    CHECK(res[0].kind == RowKind::Graph);
+}
+
+// Plain-text '/' (pasted "x^3/10") becomes a fraction of the neighbouring operands, as typing '/'.
+TEST(latex_paste_slash_makes_fraction) {
+    CHECK_EQ(latexOf(fromLatex("y=x^3/10")), std::string("y=\\frac{x^{3}}{10}"));
+    CHECK_EQ(latexOf(fromLatex("y=1/2+3")), std::string("y=\\frac{1}{2}+3"));
+    CHECK_EQ(latexOf(fromLatex("y=a/bc")), std::string("y=\\frac{a}{bc}"));
+    CHECK_EQ(latexOf(fromLatex("y=|x/2|")), std::string("y=\\left|\\frac{x}{2}\\right|"));
+    CHECK_EQ(latexOf(fromLatex("y=-x/2")), std::string("y=-\\frac{x}{2}"));
+    auto res = analyze({"y=x^3/10", "a=6/3*2"});
+    CHECK(res[0].kind == RowKind::Graph);
+    CHECK_NEAR(res[1].value, 4.0, 1e-12);
+}

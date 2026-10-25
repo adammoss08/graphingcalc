@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
-project(GraphingCalc LANGUAGES C CXX OBJCXX)
+# The app version (About box, CFBundleShortVersionString). Bump it here when tagging a release.
+project(GraphingCalc VERSION 1.2.1 LANGUAGES C CXX OBJCXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -59,7 +60,9 @@ set_source_files_properties(${METALLIB} PROPERTIES MACOSX_PACKAGE_LOCATION Resou
 set_target_properties(GraphingCalc PROPERTIES
     MACOSX_BUNDLE_INFO_PLIST ${CMAKE_SOURCE_DIR}/resources/Info.plist.in
     MACOSX_BUNDLE_BUNDLE_NAME GraphingCalc
-    MACOSX_BUNDLE_GUI_IDENTIFIER au.com.amproductions.graphingcalc)
+    MACOSX_BUNDLE_GUI_IDENTIFIER au.com.amproductions.graphingcalc
+    MACOSX_BUNDLE_SHORT_VERSION_STRING ${PROJECT_VERSION}
+    MACOSX_BUNDLE_BUNDLE_VERSION ${PROJECT_VERSION})
 target_compile_options(GraphingCalc PRIVATE -fobjc-arc)
 target_link_libraries(GraphingCalc PRIVATE calc_core "-framework AppKit" "-framework UniformTypeIdentifiers")
 add_dependencies(GraphingCalc shaders)

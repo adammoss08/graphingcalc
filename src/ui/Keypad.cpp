@@ -11,10 +11,6 @@ using namespace theme;
 
 namespace {
 
-constexpr Color kKeypadBg = Color::hex(0xDBDDE1);
-constexpr Color kKeyBg = Color::hex(0xFFFFFF);
-constexpr Color kDarkKeyBg = Color::hex(0xC8CBD1);
-constexpr Color kKeyShadow = Color::hex(0x000000, 0.18f);
 constexpr float kGap = 6;
 constexpr float kKeyRadius = 5;
 constexpr float kKeyLabel = 19;
@@ -102,15 +98,15 @@ std::vector<Keypad::Placed> Keypad::layout(const Rect& area) const {
 
 void Keypad::draw(Batch2D& b, const Rect& area) const {
     if (!open) return;
-    b.rect(area, kKeypadBg);
+    b.rect(area, KeypadBg);
     b.line(area.x, area.y + 0.5f, area.right(), area.y + 0.5f, 1, Border);
     for (const Placed& p : layout(area)) {
         const KeypadKey& k = *p.key;
         bool pressed = m_pressed == p.key, hover = m_hover == p.key;
-        Color bg = k.dark ? kDarkKeyBg : kKeyBg;
+        Color bg = k.dark ? DarkKeyBg : KeyBg;
         if (pressed) bg = bg.mix(Black, 0.12f);
         else if (hover) bg = bg.mix(Black, 0.05f);
-        b.rect({p.rect.x, p.rect.y + 1, p.rect.w, p.rect.h}, kKeyShadow, kKeyRadius);
+        b.rect({p.rect.x, p.rect.y + 1, p.rect.w, p.rect.h}, KeyShadow, kKeyRadius);
         b.rect(p.rect, bg, kKeyRadius);
         float cx = p.rect.x + p.rect.w * 0.5f, cy = p.rect.y + p.rect.h * 0.5f;
         if (k.math) {

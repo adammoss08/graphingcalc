@@ -81,7 +81,7 @@ void drawPoint(Batch2D& b, float x, float y, const Style& st, bool highlight) {
     Color c = st.color;
     switch (st.point) {
     case PointStyle::Open:
-        b.circle(x, y, r, White, std::max(2.0f, r * 0.45f), c);
+        b.circle(x, y, r, Paper, std::max(2.0f, r * 0.45f), c);
         break;
     case PointStyle::Cross: {
         float k = r * 0.85f;
@@ -283,8 +283,7 @@ void GraphView::buildFrame(const std::vector<GraphItem>& items, int selected, Gr
 void GraphView::drawUnder(Batch2D& b) const {
     if (settings.threeD) return;   // the box, grid and axes are 3D lines (Renderer3D)
     b.pushClip(area);
-    // The render pass clears to white, which is the graph background: no full-area rect needed.
-    static_assert(GraphBg.r == 1 && GraphBg.g == 1 && GraphBg.b == 1, "graph bg must match the clear colour");
+    // The render pass clears to GraphBg (Renderer), which is the graph background: no full-area rect.
     TextAtlas& atlas = b.atlas();
     float s = atlas.scale();
     float ox = area.x, oy = area.y;
@@ -303,7 +302,7 @@ void GraphView::drawUnder(Batch2D& b) const {
     bool showX = settings.xAxis && y0 <= 0 && y1 >= 0;
 
     if (settings.grid) {
-        Color minor = Black.withAlpha(MinorGridOpacity), major = Black.withAlpha(MajorGridOpacity);
+        Color minor = Ink.withAlpha(MinorGridOpacity), major = Ink.withAlpha(MajorGridOpacity);
         if (settings.minorGrid) {
             for (double v : gridValues(x0, x1, st.minorX)) {
                 if (isMultiple(v, st.majorX)) continue;
@@ -327,7 +326,7 @@ void GraphView::drawUnder(Batch2D& b) const {
             b.line(ox, y, ox + area.w, y, GridLineWidth, major);
         }
     }
-    Color axis = Black.withAlpha(AxisOpacity);
+    Color axis = Ink.withAlpha(AxisOpacity);
     float ax = snap(ox + float(vp.sx(0)), AxisLineWidth);
     float ay = snap(oy + float(vp.sy(0)), AxisLineWidth);
     if (showY) b.line(ax, oy, ax, oy + area.h, AxisLineWidth, axis);
@@ -553,7 +552,7 @@ void GraphView::drawControls(Batch2D& b) const {
     if (!m_settingsOpen) return;
     Rect r = settingsRect();
     b.shadow({r.x, r.y + 2, r.w, r.h}, 6, 8, ShadowColor.withAlpha(0.2f));
-    b.rect(r, White, 6, 1, Border);
+    b.rect(r, Paper, 6, 1, Border);
     const char* labels[] = {"Grid", "Minor Gridlines", "Axis Numbers"};
     bool values[] = {settings.grid, settings.minorGrid, settings.axisNumbers};
     for (int i = 0; i < 3; ++i) {
@@ -565,14 +564,14 @@ void GraphView::drawControls(Batch2D& b) const {
             b.line(box.x + 3.5f, box.y + 8.5f, box.x + 6.5f, box.y + 11.5f, 2, White);
             b.line(box.x + 6.5f, box.y + 11.5f, box.x + 12.5f, box.y + 4.5f, 2, White);
         } else {
-            b.rect(box, White, 3, 1.5f, Black.withAlpha(0.35f));
+            b.rect(box, Paper, 3, 1.5f, Ink.withAlpha(0.35f));
         }
         b.text(Font::Ui, 15, box.right() + 10, y + kSettingsRowH * 0.5f + 5, std::string(labels[i]), Text);
     }
     // Radians | Degrees segmented control
     float y = r.y + 6 + 3 * kSettingsRowH + 4;
     Rect seg{r.x + 14, y, r.w - 28, kSettingsRowH - 8};
-    b.rect(seg, White, 4, 1, Accent);
+    b.rect(seg, Paper, 4, 1, Accent);
     Rect half{seg.x, seg.y, seg.w * 0.5f, seg.h};
     Rect left = half, right{seg.x + seg.w * 0.5f, seg.y, seg.w * 0.5f, seg.h};
     b.rect(settings.degrees ? right : left, Accent, 4);

@@ -14,9 +14,6 @@ using namespace theme;
 
 namespace {
 
-constexpr Color kWarning = Color::hex(0xE8A13A);       // (observed) Desmos warning triangle
-constexpr Color kEvalBg = Color::hex(0x000000, 0.04f);
-constexpr Color kSliderTrack = Color::hex(0x000000, 0.18f);
 constexpr float kSliderSidePad = 34;                   // room for min/max labels left/right of the track
 
 bool rowHasCurveIcon(const ExpressionRow& r) {
@@ -169,13 +166,14 @@ void ExpressionList::drawExpression(Batch2D& b, int i, float top, bool sel, bool
     // Colour icon / warning in the tab.
     float icx = area.x + TabWidth * 0.5f, icy = top + IconCenterY;
     if (r.analysis.kind == RowKind::Error) {
-        widgets::drawIcon(b, widgets::Icon::Warning, icx, icy, ErrorIconSize, sel ? White : kWarning);
+        widgets::drawIcon(b, widgets::Icon::Warning, icx, icy, ErrorIconSize, sel ? White : WarningIcon);
     } else if (rowHasCurveIcon(r)) {
         float rad = 10;
-        if (r.hidden) b.circle(icx, icy, rad, White, 1.5f, r.color.withAlpha(0.6f));
-        else b.circle(icx, icy, rad, r.color, sel ? 1.5f : 0, White);
-        // Line-style hint inside the icon: two dashes / three dots.
-        Color hint = r.hidden ? r.color : White;
+        Color ic = onPaper(r.color);
+        if (r.hidden) b.circle(icx, icy, rad, Paper, 1.5f, ic.withAlpha(0.6f));
+        else b.circle(icx, icy, rad, ic, sel ? 1.5f : 0, White);
+        // Line-style hint inside the icon: two dashes / three dots (dark on a light icon).
+        Color hint = r.hidden ? ic : (ic.r + ic.g + ic.b > 2.2f ? Black : White);
         if (r.style.line == LineStyle::Dashed) {
             b.line(icx - 6, icy, icx - 1.5f, icy, 2, hint);
             b.line(icx + 1.5f, icy, icx + 6, icy, 2, hint);
@@ -211,7 +209,7 @@ void ExpressionList::drawExpression(Batch2D& b, int i, float top, bool sel, bool
         float x = contentRight() + 20 - w - 8;
         float base = under + EvalRowHeight * 0.75f;
         bool hot = isFraction && hover && m_hover.kind == ListHit::EvalToggle;
-        b.rect({x - 6, base - EvalSize * 1.05f, w + 12, EvalSize * 1.5f}, hot ? HoverOverlay : kEvalBg, 4);
+        b.rect({x - 6, base - EvalSize * 1.05f, w + 12, EvalSize * 1.5f}, hot ? HoverOverlay : EvalBg, 4);
         drawLatex(b, latex, Font::MathRoman, EvalSize, x, base, Text);
     }
 
@@ -244,16 +242,16 @@ void ExpressionList::drawExpression(Batch2D& b, int i, float top, bool sel, bool
         } else {
             Rect tr = sliderTrack(i);
             float cy = tr.y + tr.h * 0.5f;
-            b.rect({tr.x, cy - SliderTrackHeight * 0.5f, tr.w, SliderTrackHeight}, kSliderTrack, SliderTrackHeight * 0.5f);
+            b.rect({tr.x, cy - SliderTrackHeight * 0.5f, tr.w, SliderTrackHeight}, SliderTrack, SliderTrackHeight * 0.5f);
             double t = (r.analysis.sliderValue - r.sliderMin) / (r.sliderMax - r.sliderMin);
             float tx = tr.x + float(std::clamp(t, 0.0, 1.0)) * tr.w;
             bool hot = (hover && m_hover.kind == ListHit::Slider) || m_sliderDrag == i;
-            b.circle(tx, cy, SliderThumbRadius + (hot ? 1.5f : 0), r.color);
+            b.circle(tx, cy, SliderThumbRadius + (hot ? 1.5f : 0), onPaper(r.color));
             // Play / pause
             Rect pb = playButton(i);
             bool phot = hover && m_hover.kind == ListHit::Play;
             float pcx = pb.x + pb.w * 0.5f, pcy = pb.y + pb.h * 0.5f;
-            b.circle(pcx, pcy, PlayButtonRadius, phot ? HoverOverlay : White, 1.2f, Border);
+            b.circle(pcx, pcy, PlayButtonRadius, phot ? HoverOverlay : Paper, 1.2f, Border);
             if (r.playing) {
                 b.line(pcx - 2.5f, pcy - 4, pcx - 2.5f, pcy + 4, 2, IconColor);
                 b.line(pcx + 2.5f, pcy - 4, pcx + 2.5f, pcy + 4, 2, IconColor);
