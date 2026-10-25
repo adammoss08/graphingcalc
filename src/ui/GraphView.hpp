@@ -51,6 +51,11 @@ public:
     // (progressive refinement). Off for headless use: results arrive via the main queue.
     bool asyncSampling = false;
     std::function<void()> onAsyncUpdate;          // a background resample landed (redraw)
+    // Dragging a point whose coordinates are sliders: start (undo snapshot), then each move.
+    std::function<void()> onDragPointStart;
+    std::function<void(int row, size_t piece, double x, double y)> onDragPoint;
+    // Point labels: value of a variable for "${a}" (false if unknown).
+    std::function<bool(const std::string& name, double& value)> valueOf;
     size_t samplesInFlight() const { return m_inflight.size(); }
 
     void setArea(const Rect& r);
@@ -107,6 +112,9 @@ private:
     float m_lastX = 0, m_lastY = 0, m_downX = 0, m_downY = 0;
     int m_hoverRow = -1;
     Trace m_trace;
+    Trace m_dragPoint;            // active point drag (item/piece)
+    int m_hoverDraggable = -1;    // item index of a hovered draggable point
+    std::string labelText(const Style& st, double x, double y) const;
     PoiCache m_poi;
     int m_hoverPoi = -1;
     double m_lastSampleMs = 0;

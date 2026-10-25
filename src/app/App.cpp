@@ -67,7 +67,7 @@ bool App::init(MTL::Device* device, const std::string& metallibPath, std::string
         } else if (r.type == RowType::Expression) {
             const RowAnalysis& an = r.analysis;
             bool points = an.graph == GraphKind::Point;
-            m_styleMenu.show(row, -1, anchor, !points, an.rel != Cmp::Eq, points, false);
+            m_styleMenu.show(row, -1, anchor, !points, an.rel != Cmp::Eq, points, false, points);
         } else {
             return;
         }
@@ -80,6 +80,37 @@ bool App::init(MTL::Device* device, const std::string& metallibPath, std::string
         m_dirty = true;
     };
     m_graph.onSettingsChanged = [this] { m_needsAnalysis = true; m_dirty = true; };
+    m_graph.valueOf = [this](const std::string& name, double& v) {
+        for (const auto& r : m_list.rows) {
+            if (r.type != RowType::Expression || r.analysis.definedName != name) continue;
+            if (r.analysis.kind == RowKind::Slider) { v = r.analysis.sliderValue; return true; }
+            if (r.analysis.showValue) { v = r.analysis.value; return true; }
+        }
+        return false;
+    };
+    m_graph.onDragPointStart = [this] { willChange(); m_lastSnapshotTime = 0; };
+    m_graph.onDragPoint = [this](int row, size_t piece, double x, double y) {
+        if (row < 0 || row >= int(m_list.rows.size())) return;
+        const auto& pieces = m_list.rows[row].analysis.pieces;
+        if (piece >= pieces.size()) return;
+        std::string vars[2] = {pieces[piece].dragX, pieces[piece].dragY};
+        double vals[2] = {x, y};
+        for (int k = 0; k < 2; ++k) {
+            if (vars[k].empty()) continue;
+            for (auto& r : m_list.rows) {
+                if (r.type != RowType::Expression || r.analysis.kind != RowKind::Slider || r.analysis.definedName != vars[k])
+                    continue;
+                // Snap to the slider's step, otherwise to what one screen point can resolve.
+                double v = r.sliderStep > 0 ? r.sliderMin + std::round((vals[k] - r.sliderMin) / r.sliderStep) * r.sliderStep
+                                            : roundForDisplay(vals[k], m_graph.vp.scale);
+                r.tree.clear();
+                r.tree.insertLatex(vars[k] + "=" + formatNumber(v));
+                r.layoutDirty = true;
+                r.analysis.sliderValue = v;
+            }
+        }
+        contentChanged();
+    };
     m_graph.onAsyncUpdate = [this] {
         m_dirty = true;
         if (onRedrawNeeded) onRedrawNeeded();
@@ -290,6 +321,7 @@ void App::rebuildItems() {
             folderHidden = fi >= 0 && rows[fi].hidden;
         }
         r.syncStyle();
+        r.style.label = r.label.utf8();
         r.effectiveHidden = r.hidden || folderHidden;
         if (rowGraphs(r)) {
             Style st = r.style;

@@ -121,7 +121,7 @@ void finishHash(RowAnalysis& r) {
 }
 
 void analyzeGraphRow(const ParsedRow& row, const Definitions& defs, const AnalyzerSettings& settings,
-                     RowAnalysis& out) {
+                     const std::set<std::string>& sliders, RowAnalysis& out) {
     RowCompiler rc(defs, settings);
     AstPool& P = rc.pool();
     const Statement& st = row.st;
@@ -162,6 +162,16 @@ void analyzeGraphRow(const ParsedRow& row, const Definitions& defs, const Analyz
                 out.pieces.push_back(std::move(pc));
             }
             out.graph = param ? GraphKind::Parametric : GraphKind::Point;
+            // Desmos: a point whose coordinate is a slider variable can be dragged on the graph.
+            if (!param && items.size() == st.exprs.size()) {
+                for (size_t k = 0; k < st.exprs.size(); ++k) {
+                    const AstNode& raw = row.pool[st.exprs[k]];
+                    if (raw.op != AstOp::Tuple || raw.kids.size() != 2) continue;
+                    std::string vx, vy;
+                    if (isSingleVar(row.pool, raw.kids[0], &vx) && sliders.count(vx)) out.pieces[k].dragX = vx;
+                    if (isSingleVar(row.pool, raw.kids[1], &vy) && sliders.count(vy)) out.pieces[k].dragY = vy;
+                }
+            }
             return;
         }
         if (items.size() != 1 && st.topLevelList) throw ParseError("Unexpected ','");
@@ -494,6 +504,13 @@ std::vector<RowAnalysis> analyzeGraph(const std::vector<RowInput>& rows, const A
         else defs.fns[pr.name] = {&pr.pool, pr.defRoot, pr.params};
     }
 
+    // Slider variables (defined as a plain number) can be driven by dragging points.
+    std::set<std::string> sliders;
+    for (auto& pr : parsed) {
+        double v;
+        if (pr.def == ParsedRow::Def::Var && isPlainNumber(pr.pool, pr.defRoot, v)) sliders.insert(pr.name);
+    }
+
     // Regressions first: their fitted parameters become definitions other rows can use.
     AstPool paramPool;  // fitted regression parameters (defs refer to it by pointer + index)
     std::vector<bool> done(n, false);
@@ -563,7 +580,7 @@ std::vector<RowAnalysis> analyzeGraph(const std::vector<RowInput>& rows, const A
                     if (!m.empty()) setMissingError(ra, m);
                 }
             } else {
-                analyzeGraphRow(pr, defs, settings, ra);
+                analyzeGraphRow(pr, defs, settings, sliders, ra);
             }
         } catch (const ParseError& e) {
             ra = RowAnalysis{};

@@ -177,6 +177,8 @@ void styleFields(const Style& st, bool isPointList, std::string& o) {
     if (st.fillOpacity != theme::FillOpacity) o += ",\"fillOpacity\":\"" + numf(st.fillOpacity) + "\"";
     if (st.point != PointStyle::Point) o += std::string(",\"pointStyle\":\"") + pointStyleName(st.point) + "\"";
     if (st.pointSize != theme::PointDiameter) o += ",\"pointSize\":\"" + numf(st.pointSize) + "\"";
+    if (st.showLabel) o += ",\"showLabel\":true";
+    if (!st.label.empty()) { o += ",\"label\":"; escape(st.label, o); }
     if (isPointList) {
         o += std::string(",\"lines\":") + (st.showLines ? "true" : "false");
         o += std::string(",\"points\":") + (st.showPoints ? "true" : "false");
@@ -194,6 +196,8 @@ void readStyle(const Json& e, Style& st) {
     if (const Json* v = e.get("pointSize")) st.pointSize = float(v->num(st.pointSize));
     if (const Json* v = e.get("lines")) st.showLines = v->type == Json::Bool ? v->b : st.showLines;
     if (const Json* v = e.get("points")) st.showPoints = v->type == Json::Bool ? v->b : st.showPoints;
+    if (const Json* v = e.get("showLabel")) st.showLabel = v->type == Json::Bool && v->b;
+    if (const Json* v = e.get("label")) st.label = v->type == Json::Str ? v->s : st.label;
 }
 
 std::string str(const Json* j, const std::string& def = "") {

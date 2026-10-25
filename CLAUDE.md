@@ -123,9 +123,9 @@ OP_POW_ODD/EVEN so negative bases work identically on both VMs; variable exponen
 are CPU-only Desmos semantics.
 
 ### Known gaps vs Desmos (next work)
-Drag-to-reorder rows; draggable points / movable sliders on the graph; point labels; image drag handles
-on the graph; actions/tickers; recursion; complex numbers; geometry and 3D calculators; accessibility
-(audio trace). Tables: column resize and drag-select.
+Image drag handles on the graph; draggable points with expression coordinates (only plain slider
+variables drag today); actions/tickers; recursion; complex numbers; geometry and 3D calculators;
+accessibility (audio trace). Tables: column resize and drag-select.
 
 ## Rules
 - **Design consistency:** every colour, size, radius, font size and animation duration comes from

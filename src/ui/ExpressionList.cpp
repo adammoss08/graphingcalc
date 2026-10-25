@@ -188,14 +188,16 @@ MathTree* ExpressionList::focusedTree() {
     if (focus.row < 0) return nullptr;
     ExpressionRow& r = rows[focus.row];
     if (focus.field == Field::Main) return r.type == RowType::Expression ? &r.tree : nullptr;
-    if (focus.field == Field::Text) return nullptr;
+    if (focus.field == Field::Text || focus.field == Field::Label) return nullptr;
     MathField* mf = fieldFor(focus);
     return mf ? &mf->tree : nullptr;
 }
 
 TextField* ExpressionList::focusedText() {
-    if (focus.row < 0 || focus.field != Field::Text) return nullptr;
-    return &rows[focus.row].text;
+    if (focus.row < 0) return nullptr;
+    if (focus.field == Field::Text) return &rows[focus.row].text;
+    if (focus.field == Field::Label) return &rows[focus.row].label;
+    return nullptr;
 }
 
 const FieldBox* ExpressionList::boxFor(int row, const Focus& f) const {
@@ -346,6 +348,23 @@ void ExpressionList::draw(Batch2D& b, bool cursorVisible) const {
             b.line(area.x, top + 0.5f, area.right(), top + 0.5f, 1, RowBorder);
         }
     }
+    // Reorder drag: dim the dragged block and show where it will land.
+    if (m_dragRow >= 0) {
+        int end = rows[m_dragRow].type == RowType::Folder ? folderEnd(m_dragRow) : m_dragRow + 1;
+        for (int i = m_dragRow; i < end; ++i)
+            if (rows[i].visibleInList) b.rect({area.x, rowTopOnScreen(i), area.w, rows[i].h}, White.withAlpha(0.55f));
+        if (m_dropIndex >= 0) {
+            float y = m_dropIndex < int(rows.size()) ? rowTopOnScreen(m_dropIndex) : area.y + contentHeight() - NewRowHeight - scrollY;
+            float indent = 0;
+            if (rows[m_dragRow].type != RowType::Folder && m_dropIndex > 0) {
+                const ExpressionRow& prev = rows[m_dropIndex - 1];
+                bool intoFolder = (prev.type == RowType::Folder && !prev.collapsed) ||
+                                  (prev.folderId && indexOfId(prev.folderId) >= 0 && !rows[indexOfId(prev.folderId)].collapsed);
+                if (intoFolder) indent = FolderIndent;
+            }
+            b.rect({area.x + TabWidth + indent, y - 1.5f, area.w - TabWidth - indent, 3}, Accent, 1.5f);
+        }
+    }
     // The "new expression" row.
     float top = area.y + contentHeight() - NewRowHeight - scrollY;
     if (top < area.bottom()) {
@@ -359,6 +378,64 @@ void ExpressionList::draw(Batch2D& b, bool cursorVisible) const {
         b.line(area.x, top + NewRowHeight - 0.5f, area.right(), top + NewRowHeight - 0.5f, 1, RowBorder);
     }
     b.popClip();
+}
+
+void ExpressionList::drawTextLine(Batch2D& b, const TextField& tf, float x, float baseline, bool focused,
+                                  bool cursorVisible, const char* placeholder) const {
+    if (tf.text.empty() && !focused) {
+        b.text(Font::Ui, NoteTextSize, x, baseline, std::string(placeholder), Placeholder);
+        return;
+    }
+    if (focused && tf.hasSelection()) {
+        int a = std::min(tf.anchor, tf.cursor), z = std::max(tf.anchor, tf.cursor);
+        float x1 = x + atlas->measure(Font::Ui, tf.text.substr(0, a), NoteTextSize);
+        float x2 = x + atlas->measure(Font::Ui, tf.text.substr(0, z), NoteTextSize);
+        b.rect({x1, baseline - NoteTextSize, x2 - x1, NoteLineHeight}, SelectionColor);
+    }
+    b.text(Font::Ui, NoteTextSize, x, baseline, tf.text, Text);
+    if (focused && cursorVisible && !tf.hasSelection()) {
+        float cx = x + atlas->measure(Font::Ui, tf.text.substr(0, tf.cursor), NoteTextSize);
+        b.line(cx, baseline - NoteTextSize * 0.85f, cx, baseline + NoteTextSize * 0.25f, 1, CursorColor);
+    }
+}
+
+// ---- reordering --------------------------------------------------------------------------------
+
+int ExpressionList::dropIndexAt(float y) const {
+    int end = rows[m_dragRow].type == RowType::Folder ? folderEnd(m_dragRow) : m_dragRow + 1;
+    for (int i = 0; i < int(rows.size()); ++i) {
+        if (!rows[i].visibleInList || (i >= m_dragRow && i < end)) continue;
+        if (y < rowTopOnScreen(i) + rows[i].h * 0.5f) return i;
+    }
+    return int(rows.size());
+}
+
+void ExpressionList::moveBlock(int from, int dropBefore) {
+    bool folder = rows[from].type == RowType::Folder;
+    int end = folder ? folderEnd(from) : from + 1;
+    if (dropBefore >= from && dropBefore <= end) return;  // dropped onto itself
+    uint32_t focusedId = focus.row >= 0 ? rows[focus.row].id : 0;
+    std::vector<ExpressionRow> block(std::make_move_iterator(rows.begin() + from), std::make_move_iterator(rows.begin() + end));
+    rows.erase(rows.begin() + from, rows.begin() + end);
+    if (dropBefore > from) dropBefore -= end - from;
+    auto collapsedFolder = [&](uint32_t id) { int fi = indexOfId(id); return fi >= 0 && rows[fi].collapsed; };
+    if (folder) {
+        // Folders don't nest: a drop inside another folder's block goes after that block.
+        if (dropBefore > 0 && dropBefore < int(rows.size()) && rows[dropBefore].folderId)
+            dropBefore = folderEnd(indexOfId(rows[dropBefore].folderId));
+    } else {
+        // A row dropped right under an open folder (or among its children) joins that folder.
+        uint32_t fid = 0;
+        if (dropBefore > 0) {
+            const ExpressionRow& prev = rows[dropBefore - 1];
+            if (prev.type == RowType::Folder && !prev.collapsed) fid = prev.id;
+            else if (prev.folderId && !collapsedFolder(prev.folderId)) fid = prev.folderId;
+        }
+        block[0].folderId = fid;
+    }
+    rows.insert(rows.begin() + dropBefore, std::make_move_iterator(block.begin()), std::make_move_iterator(block.end()));
+    for (auto& r : rows) r.layoutDirty = true;
+    focus.row = focusedId ? indexOfId(focusedId) : -1;
 }
 
 // ---- input -------------------------------------------------------------------------------------
@@ -415,6 +492,7 @@ bool ExpressionList::mouseDown(float x, float y, int clicks, Mods m) {
             return true;
         }
         m_pressTime = -2;  // armed: tick() stamps the time on the next frame
+        if (h.kind == ListHit::Icon) m_dragCandidate = h.row;  // the whole tab is a drag handle
         return true;
     case ListHit::Delete:
         if (onContentWillChange) onContentWillChange();
@@ -452,13 +530,14 @@ bool ExpressionList::mouseDown(float x, float y, int clicks, Mods m) {
     }
     case ListHit::Tab:
         focusRow(h.row);
+        m_dragCandidate = h.row;   // dragging a tab reorders (Desmos)
         return true;
     case ListHit::Field: {
         Focus f{h.row, h.field, h.col, h.cell};
         bool newFocus = !(focus == f);
         if (newFocus) focusField(f);
         const FieldBox* fb = boxFor(h.row, f);
-        if (h.field == Field::Text) {
+        if (h.field == Field::Text || h.field == Field::Label) {
             if (TextField* tf = focusedText()) {
                 if (clicks >= 2) tf->selectAll();
                 else tf->end(false);
@@ -488,6 +567,16 @@ bool ExpressionList::mouseDown(float x, float y, int clicks, Mods m) {
 }
 
 bool ExpressionList::mouseDragged(float x, float y) {
+    if (m_dragCandidate >= 0 && m_dragRow < 0 && std::fabs(y - m_pressY) > DragThreshold) {
+        m_dragRow = m_dragCandidate;
+        m_pressed = {};      // a drag from the colour icon doesn't toggle it
+        m_pressTime = -1;
+    }
+    if (m_dragRow >= 0) {
+        m_dragY = y;
+        m_dropIndex = dropIndexAt(y);
+        return true;
+    }
     if (m_sliderDrag >= 0) {
         setSliderFromX(m_sliderDrag, x);
         return true;
@@ -520,6 +609,13 @@ bool ExpressionList::mouseUp(float x, float y) {
             if (onStyleChanged) onStyleChanged();
         }
     }
+    if (m_dragRow >= 0 && m_dropIndex >= 0) {
+        if (onContentWillChange) onContentWillChange();
+        moveBlock(m_dragRow, m_dropIndex);
+        changed();
+        was = true;
+    }
+    m_dragCandidate = m_dragRow = m_dropIndex = -1;
     m_sliderDrag = -1;
     m_selectingText = false;
     m_pressed = {};
@@ -543,7 +639,7 @@ void ExpressionList::selectAll() {
 bool ExpressionList::key(Key k, Mods m, const std::u32string& text) {
     if (focus.row < 0 || focus.row >= int(rows.size())) return false;
     ExpressionRow& r = rows[focus.row];
-    if (focus.field == Field::Text) return keyText(k, m, text);
+    if (focus.field == Field::Text || focus.field == Field::Label) return keyText(k, m, text);
     if (r.type == RowType::Table) return keyTable(k, m, text);
     if (focus.field != Field::Main) return keyExpressionField(k, m, text);
 

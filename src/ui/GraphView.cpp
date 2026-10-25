@@ -412,9 +412,20 @@ void GraphView::drawOver(Batch2D& b, const std::vector<GraphItem>& items, int se
             }
         }
         if (!it.style.showPoints) continue;
+        int itemIndex = int(&it - items.data());
         for (auto& p : an.pieces) {
             if (!std::isfinite(p.px) || !std::isfinite(p.py)) continue;
-            drawPoint(b, ox + float(vp.sx(p.px)), oy + float(vp.sy(p.py)), it.style, hl);
+            float px = ox + float(vp.sx(p.px)), py = oy + float(vp.sy(p.py));
+            if (!p.dragX.empty() || !p.dragY.empty()) {
+                // Desmos marks draggable points with a soft halo (stronger when hovered or dragged).
+                bool hot = m_hoverDraggable == itemIndex || (m_dragPoint.active && m_dragPoint.item == itemIndex);
+                b.circle(px, py, DragHaloRadius + (hot ? 3 : 0), it.style.color.withAlpha(DragHaloOpacity * (hot ? 1.6f : 1)));
+            }
+            drawPoint(b, px, py, it.style, hl);
+            if (it.style.showLabel) {
+                std::string t = labelText(it.style, p.px, p.py);
+                b.text(Font::Ui, CoordLabelSize, px + 10, py - 10, t, Text, LabelHalo);
+            }
         }
     }
     for (size_t k = 0; k < m_poi.pois.size(); ++k) {
@@ -434,6 +445,37 @@ void GraphView::drawOver(Batch2D& b, const std::vector<GraphItem>& items, int se
         b.text(Font::Ui, CoordLabelSize, x + 8, y - 8, t, Text, LabelHalo);
     }
     b.popClip();
+}
+
+std::string GraphView::labelText(const Style& st, double x, double y) const {
+    if (st.label.empty()) return coordText(x, y, vp.scale);
+    // "${name}" is replaced by that variable's value (Desmos label interpolation).
+    std::string out;
+    for (size_t i = 0; i < st.label.size();) {
+        if (st.label.compare(i, 2, "${") == 0) {
+            size_t end = st.label.find('}', i + 2);
+            if (end != std::string::npos) {
+                std::string name = st.label.substr(i + 2, end - i - 2);
+                while (!name.empty() && name.front() == ' ') name.erase(name.begin());
+                while (!name.empty() && name.back() == ' ') name.pop_back();
+                // "a_1" and "a_{1}" both name a subscripted variable
+                if (name.size() > 2 && name[name.size() - 2] == '_' && name.find('{') == std::string::npos)
+                    name = name.substr(0, name.size() - 1) + "{" + name.back() + "}";
+                double v;
+                if (valueOf && valueOf(name, v)) {
+                    char buf[48];
+                    std::snprintf(buf, sizeof buf, "%.10g", roundForDisplay(v, vp.scale));
+                    out += buf;
+                } else {
+                    out += "undefined";
+                }
+                i = end + 1;
+                continue;
+            }
+        }
+        out += st.label[i++];
+    }
+    return out;
 }
 
 // ---- controls ----------------------------------------------------------------------------------
@@ -608,8 +650,15 @@ bool GraphView::mouseDown(float x, float y, int clicks, Mods m, const std::vecto
     if (m_pressButton != Button::None) return true;
     Trace t;
     if (pickCurve(x, y, items, t)) {
-        m_trace = t;
         if (onSelectRow) onSelectRow(items[t.item].row);
+        const RowAnalysis& an = *items[t.item].an;
+        if (an.graph == GraphKind::Point && t.piece < int(an.pieces.size()) &&
+            (!an.pieces[t.piece].dragX.empty() || !an.pieces[t.piece].dragY.empty())) {
+            m_dragPoint = t;
+            if (onDragPointStart) onDragPointStart();
+            return true;
+        }
+        m_trace = t;
         return true;
     }
     m_panning = true;
@@ -625,6 +674,11 @@ bool GraphView::mouseDragged(float x, float y, const std::vector<GraphItem>& ite
         bool changed = h != m_hoverButton;
         m_hoverButton = h;
         return changed;
+    }
+    if (m_dragPoint.active) {
+        if (m_dragPoint.item < int(items.size()) && onDragPoint)
+            onDragPoint(items[m_dragPoint.item].row, size_t(m_dragPoint.piece), vp.wx(x - area.x), vp.wy(y - area.y));
+        return true;
     }
     if (m_trace.active) {
         if (m_trace.item < int(items.size())) {
@@ -665,6 +719,10 @@ bool GraphView::mouseUp(float x, float y) {
         }
         return true;
     }
+    if (m_dragPoint.active) {
+        m_dragPoint.active = false;
+        return true;
+    }
     if (m_trace.active) {
         m_trace.active = false;
         return true;
@@ -686,9 +744,16 @@ bool GraphView::mouseMoved(float x, float y, const std::vector<GraphItem>& items
     if (hs != m_hoverSetting) { m_hoverSetting = hs; changed = true; }
     int hoverRow = -1;
     Trace t;
+    int hoverDrag = -1;
     if (area.contains(x, y) && hb == Button::None && hs < 0 && !settingsRect().contains(x, y) &&
-        pickCurve(x, y, items, t))
+        pickCurve(x, y, items, t)) {
         hoverRow = items[t.item].row;
+        const RowAnalysis& an = *items[t.item].an;
+        if (an.graph == GraphKind::Point && t.piece < int(an.pieces.size()) &&
+            (!an.pieces[t.piece].dragX.empty() || !an.pieces[t.piece].dragY.empty()))
+            hoverDrag = t.item;
+    }
+    if (hoverDrag != m_hoverDraggable) { m_hoverDraggable = hoverDrag; changed = true; }
     if (hoverRow != m_hoverRow) { m_hoverRow = hoverRow; changed = true; }
     int hp = -1;
     for (size_t k = 0; k < m_poi.pois.size(); ++k) {
@@ -772,7 +837,8 @@ void GraphView::asyncDone(void* ctx) {
 }
 
 CursorKind GraphView::cursorAt(float x, float y) const {
-    if (m_panning) return CursorKind::Grabbing;
+    if (m_panning || m_dragPoint.active) return CursorKind::Grabbing;
+    if (m_hoverDraggable >= 0) return CursorKind::Pointer;
     if (buttonAt(x, y) != Button::None || settingAt(x, y) >= 0) return CursorKind::Pointer;
     if (m_hoverRow >= 0 || m_hoverPoi >= 0) return CursorKind::Pointer;
     return CursorKind::Arrow;

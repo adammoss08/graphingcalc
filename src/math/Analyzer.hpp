@@ -29,6 +29,7 @@ struct GraphPiece {
     Program f, g;          // see GraphKind
     Program region;        // inequalities: region where region(x, y) > 0 (or >= 0)
     double px = 0, py = 0; // points
+    std::string dragX, dragY;  // points: slider variables a drag on the graph updates ("" = fixed)
 };
 
 struct RowAnalysis {

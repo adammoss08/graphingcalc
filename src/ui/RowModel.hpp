@@ -29,6 +29,8 @@ struct Style {
     float pointSize = theme::PointDiameter;
     bool showLines = false;   // tables: connect points (Desmos default off)
     bool showPoints = true;
+    bool showLabel = false;   // points: draw a label (coordinates, or `label` with ${var} values)
+    std::string label;
 };
 
 // A small editable math box with its own cached layout (slider bounds, domains, table cells...).
@@ -79,7 +81,7 @@ struct TableColumn {
 // Which editable box has keyboard focus.
 enum class Field : uint8_t {
     Main, SliderMin, SliderMax, SliderStep, DomainMin, DomainMax, Text, TableHeader, TableCell,
-    ImageCenter, ImageWidth, ImageHeight,
+    ImageCenter, ImageWidth, ImageHeight, Label,
 };
 
 struct ExpressionRow {
@@ -100,6 +102,8 @@ struct ExpressionRow {
     int playDirection = 1;
     bool evalAsFraction = false;    // "= value" shown as a fraction (toggle on rational results)
     MathField domainMin, domainMax; // parametric / polar domain (empty = default)
+
+    TextField label;                // point label text (shown when style.showLabel)
 
     // Note / folder
     TextField text;

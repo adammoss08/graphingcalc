@@ -237,3 +237,89 @@ TEST(rows_heavy_curve_refines_in_background) {
     CHECK(a.graph().samplesInFlight() == 0);
     CHECK(a.needsRedraw());
 }
+
+TEST(rows_drag_to_reorder_and_into_folder) {
+    App& a = fresh();
+    a.pasteText("y=1\ny=2\ny=3");
+    frame(a);
+    auto latex = [&](int i) { return blockToLatex(L(a).rows[i].tree.root()); };
+    // Drag row 3 ("y=3") by its tab up above row 1.
+    float tabX = L(a).area.x + 6;
+    float y3 = L(a).rowTopOnScreen(2) + 20, y1 = L(a).rowTopOnScreen(0) + 5;
+    a.mouseDown(tabX, y3, 1, {});
+    a.mouseDragged(tabX, y3 - 20);
+    a.mouseDragged(tabX, y1);
+    a.mouseUp(tabX, y1);
+    frame(a);
+    CHECK_EQ(latex(0), std::string("y=3"));
+    CHECK_EQ(latex(1), std::string("y=1"));
+    a.undo();
+    frame(a);
+    CHECK_EQ(latex(0), std::string("y=1"));
+    // Drop a row just under a folder: it joins the folder.
+    L(a).blur();
+    a.addItem(AddMenu::Folder);
+    frame(a);
+    int f = L(a).focusedRow();
+    int last = int(L(a).rows.size()) - 1;      // the folder was added after the focused row
+    if (f == last) {                            // move "y=1" under the folder
+        float yf = L(a).rowTopOnScreen(f) + L(a).rows[f].h - 3;
+        float yr = L(a).rowTopOnScreen(0) + 20;
+        a.mouseDown(tabX, yr, 1, {});
+        a.mouseDragged(tabX, yr + 10);
+        a.mouseDragged(tabX, yf + L(a).rows[f].h * 0.6f);
+        a.mouseUp(tabX, yf + L(a).rows[f].h * 0.6f);
+        frame(a);
+        CHECK_EQ(L(a).rows.back().folderId, L(a).rows[L(a).rows.size() - 2].id);
+    }
+}
+
+TEST(rows_dragging_a_point_moves_its_sliders) {
+    App& a = fresh();
+    a.pasteText("a=1\nb=2\n\\left(a,b\\right)");
+    L(a).blur();
+    frame(a);
+    const auto& pc = L(a).rows[2].analysis.pieces;
+    CHECK(pc.size() == 1 && pc[0].dragX == "a" && pc[0].dragY == "b");
+    // Press on the point, drag it to world (3, -1).
+    const Viewport& vp = a.graph().vp;
+    calc::Rect g = a.graph().area;
+    float px = g.x + float(vp.sx(1)), py = g.y + float(vp.sy(2));
+    float tx = g.x + float(vp.sx(3)), ty = g.y + float(vp.sy(-1));
+    a.mouseDown(px, py, 1, {});
+    a.mouseDragged(tx, ty);
+    a.mouseUp(tx, ty);
+    frame(a);
+    CHECK_NEAR(L(a).rows[0].analysis.sliderValue, 3, 0.05);
+    CHECK_NEAR(L(a).rows[1].analysis.sliderValue, -1, 0.05);
+    a.undo();                                  // one undo step for the whole drag
+    frame(a);
+    CHECK_NEAR(L(a).rows[0].analysis.sliderValue, 1, 0);
+    // Literal points aren't draggable.
+    a.addExpression("\\left(4,5\\right)");
+    frame(a);
+    CHECK(L(a).rows.back().analysis.pieces[0].dragX.empty());
+}
+
+TEST(rows_point_labels_save_and_interpolate) {
+    App& a = fresh();
+    a.pasteText("a=2.5\n\\left(a,1\\right)");
+    frame(a);
+    ExpressionRow& r = L(a).rows[1];
+    r.style.showLabel = true;
+    r.hidden = false;
+    L(a).focusField({1, Field::Label});
+    for (char c : std::string("A at ${a}")) a.key(Key::Char, {}, std::u32string(1, char32_t(c)));
+    frame(a);
+    double v;
+    CHECK(a.graph().valueOf && a.graph().valueOf("a", v) && v == 2.5);
+    CHECK_EQ(L(a).rows[1].style.label, std::string("A at ${a}"));
+    const char* tmp = std::getenv("TMPDIR");
+    std::string out = std::string(tmp ? tmp : "/tmp") + "/graphingcalc_labels.json", err;
+    CHECK(a.saveFile(out, err));
+    App& b = fresh();
+    CHECK(b.loadFile(out, err));
+    frame(b);
+    CHECK(L(b).rows[1].style.showLabel);
+    CHECK_EQ(L(b).rows[1].label.utf8(), std::string("A at ${a}"));
+}

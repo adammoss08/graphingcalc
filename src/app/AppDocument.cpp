@@ -37,6 +37,7 @@ SavedGraph App::snapshot() const {
         s.style = r.style;
         s.style.color = r.color;
         s.style.hidden = r.hidden;
+        s.style.label = r.label.utf8();
         switch (r.type) {
         case RowType::Expression:
             s.latex = blockToLatex(r.tree.root());
@@ -91,6 +92,7 @@ void App::restore(const SavedGraph& g) {
         r.style = s.style;
         r.color = s.style.color;
         r.hidden = s.style.hidden;
+        r.label.setUtf8(s.style.label);
         switch (s.type) {
         case RowType::Expression:
             r.tree.insertLatex(s.latex);

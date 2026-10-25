@@ -116,6 +116,13 @@ float ExpressionList::layoutExpression(int i, std::vector<FieldBox>& boxes) {
         inlineField(Field::DomainMax, r.domainMax, x, base, true, InlineFieldSize);
         bottom = std::max(bottom, under + 8) + DomainRowHeight;
     }
+    if (r.style.showLabel && r.analysis.graph == GraphKind::Point) {
+        float base = std::max(bottom, under + 8) + LabelRowHeight * 0.62f;
+        float lx = x0 + atlas->measure(Font::Ui, std::string("label"), SliderLabelSize) + 10;
+        boxes.push_back({Field::Label, 0, 0, Rect{lx, base - NoteTextSize - 2, contentRight() - lx, NoteTextSize * 1.3f + 4},
+                         base, NoteTextSize, true});
+        bottom = std::max(bottom, under + 8) + LabelRowHeight;
+    }
     if (r.analysis.kind == RowKind::Error && !r.analysis.sliderSuggestions.empty()) bottom += SuggestionHeight;
     return bottom;
 }
@@ -179,6 +186,15 @@ void ExpressionList::drawExpression(Batch2D& b, int i, float top, bool sel, bool
     }
 
     for (const FieldBox& fb : m_boxes[i]) {
+        if (fb.field == Field::Label) {
+            bool focused = focus.row == i && focus.field == Field::Label;
+            float uy = top + fb.rect.bottom();
+            if (focused) b.rect({fb.rect.x, uy - 2, fb.rect.w, 2}, Accent);
+            else b.line(fb.rect.x, uy - 0.5f, fb.rect.right(), uy - 0.5f, 1, Border);
+            b.text(Font::Ui, SliderLabelSize, contentX(r), top + fb.baseline, std::string("label"), TextSecondary);
+            drawTextLine(b, r.label, fb.rect.x + 2, top + fb.baseline, focused, cursorVisible, "coordinates");
+            continue;
+        }
         Color c = Text;
         if (r.analysis.kind == RowKind::Slider && !editingBounds(focus, i) &&
             (fb.field == Field::SliderMin || fb.field == Field::SliderMax))

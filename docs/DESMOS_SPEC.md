@@ -90,3 +90,13 @@ point/open/cross and size (default 8); tables: Points / Lines toggles. JSON keys
 Drawer across the bottom (232pt, bg `#dbdde1`, white keys, grey function keys, radius 5). Pages: main
 (x y a² aᵇ, digits, operators, ( ) < > |a| , ≤ ≥ √ π θ, arrows, ⌫, ↵), functions (trig, inverse trig,
 ln/log, e^x, roots, d/dx, f′, ∑ ∏ ∫, mod/floor/round/ceil/min/max/total/mean, [ ], ~), ABC (letters).
+
+## Reordering, draggable points, labels
+- **Reorder:** drag a row by its tab (the colour icon is part of the handle; a click without moving
+  still toggles visibility). An accent insertion line shows the drop point; a row dropped right under
+  an open folder (or among its children) joins it. Folders move with their contents and never nest.
+- **Draggable points:** a point whose coordinate is a slider variable, e.g. `(a, b)`, drags on the
+  graph and updates the sliders (snapped to the slider step, else to screen precision). Draggable
+  points have a soft halo (radius 13, colour at .25; stronger when hovered/dragged).
+- **Labels:** style menu → Label. Empty label text shows the coordinates; otherwise the text, with
+  `${a}` replaced by a variable's value. JSON: `showLabel`, `label`.

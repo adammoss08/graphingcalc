@@ -39,7 +39,8 @@ void drawCheck(Batch2D& b, const Rect& box, bool on) {
 
 } // namespace
 
-void StyleMenu::show(int r, int c, Rect a, bool lines, bool fill, bool points, bool pointToggles) {
+void StyleMenu::show(int r, int c, Rect a, bool lines, bool fill, bool points, bool pointToggles, bool labelToggle) {
+    showLabelToggle = labelToggle;
     open = true;
     row = r;
     col = c;
@@ -83,6 +84,10 @@ StyleMenu::Layout StyleMenu::layout(float viewW, float viewH) const {
         L.sizeTrack = {kPad + 70, cy + 7, kMenuWidth - 2 * kPad - 70, 20};
         cy += kRowH - 4;
     }
+    if (showLabelToggle) {
+        L.labelToggle = {kPad, cy + 9, 16, 16};
+        cy += kRowH;
+    }
     L.height = cy + kPad - 6;
     // Keep the menu on screen.
     x = std::min(x, viewW - kMenuWidth - 8);
@@ -92,7 +97,7 @@ StyleMenu::Layout StyleMenu::layout(float viewW, float viewH) const {
     for (auto& r : L.swatches) off(r);
     for (auto& r : L.lineStyles) off(r);
     for (auto& r : L.pointStyles) off(r);
-    for (Rect* r : {&L.widthTrack, &L.opacityTrack, &L.fillTrack, &L.sizeTrack, &L.pointsToggle, &L.linesToggle}) off(*r);
+    for (Rect* r : {&L.widthTrack, &L.opacityTrack, &L.fillTrack, &L.sizeTrack, &L.pointsToggle, &L.linesToggle, &L.labelToggle}) off(*r);
     return L;
 }
 
@@ -152,6 +157,10 @@ void StyleMenu::draw(Batch2D& b, const Style& s, float viewW, float viewH) const
         label(L.sizeTrack, "Size");
         drawTrack(b, L.sizeTrack, sliderT(s.pointSize, kMinPointSize, kMaxPointSize), s.color);
     }
+    if (showLabelToggle) {
+        drawCheck(b, L.labelToggle, s.showLabel);
+        b.text(Font::Ui, 14, L.labelToggle.right() + 8, L.labelToggle.y + 13, std::string("Label"), Text);
+    }
 }
 
 void StyleMenu::willChange() {
@@ -192,6 +201,7 @@ bool StyleMenu::mouseDown(float x, float y, Style& s, float viewW, float viewH) 
             if (L.pointStyles[i].contains(x, y)) { willChange(); s.point = PointStyle(i); return true; }
         if (L.sizeTrack.inset(-4).contains(x, y)) { willChange(); m_drag = Drag::PointSize; dragTo(m_drag, x, s, L); return true; }
     }
+    if (showLabelToggle && L.labelToggle.inset(-4).contains(x, y)) { willChange(); s.showLabel = !s.showLabel; return true; }
     return true;
 }
 

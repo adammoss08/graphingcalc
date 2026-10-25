@@ -12,10 +12,10 @@ public:
     bool open = false;
     int row = -1, col = -1;          // col >= 0: a table column
     Rect anchor;
-    bool showLines = true, showFill = false, showPoints = false, showPointToggles = false;
+    bool showLines = true, showFill = false, showPoints = false, showPointToggles = false, showLabelToggle = false;
     std::function<void()> onWillChange;  // first edit of an open menu (undo snapshot)
 
-    void show(int r, int c, Rect a, bool lines, bool fill, bool points, bool pointToggles);
+    void show(int r, int c, Rect a, bool lines, bool fill, bool points, bool pointToggles, bool labelToggle = false);
     void close() { open = false; }
     Rect rect(float viewW, float viewH) const;
     void draw(Batch2D& b, const Style& s, float viewW, float viewH) const;
@@ -33,7 +33,7 @@ private:
         Rect box;
         Rect swatches[theme::ColorPaletteCount];
         Rect lineStyles[3];
-        Rect widthTrack, opacityTrack, fillTrack, pointStyles[3], sizeTrack, pointsToggle, linesToggle;
+        Rect widthTrack, opacityTrack, fillTrack, pointStyles[3], sizeTrack, pointsToggle, linesToggle, labelToggle;
         float height;
     };
     Layout layout(float viewW, float viewH) const;

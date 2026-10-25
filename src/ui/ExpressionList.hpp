@@ -112,6 +112,10 @@ private:
     ListHit m_hover, m_pressed;
     bool m_selectingText = false;
     int m_sliderDrag = -1;
+    int m_dragCandidate = -1;          // pressed a tab: becomes a reorder drag past the threshold
+    int m_dragRow = -1;                // row (block) being dragged
+    int m_dropIndex = -1;              // insert position (row index) for the drop
+    float m_dragY = 0;
     double m_pressTime = -1;           // icon long-press (opens the style menu)
     float m_pressX = 0, m_pressY = 0;
     bool m_longPressFired = false;
@@ -146,6 +150,12 @@ private:
     bool keyText(Key k, Mods m, const std::u32string& text);
 
     void drawFieldBox(Batch2D& b, int row, const FieldBox& fb, float top, bool cursorVisible, Color color) const;
+    void drawTextLine(Batch2D& b, const TextField& tf, float x, float baseline, bool focused, bool cursorVisible,
+                      const char* placeholder) const;
+    int dropIndexAt(float y) const;
+    void moveBlock(int from, int dropBefore);
+public:
+    bool reordering() const { return m_dragRow >= 0; }
     friend class App;
 };
 

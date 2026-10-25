@@ -210,7 +210,8 @@ ListHit ExpressionList::hitMisc(int i, float x, float y) const {
 bool ExpressionList::keyText(Key k, Mods m, const std::u32string& text) {
     int row = focus.row;
     ExpressionRow& r = rows[row];
-    TextField& tf = r.text;
+    TextField& tf = *focusedText();
+    bool isLabel = focus.field == Field::Label;
     auto edit = [&](auto&& fn) {
         if (onContentWillChange) onContentWillChange();
         if (fn()) edited(row);
@@ -218,7 +219,7 @@ bool ExpressionList::keyText(Key k, Mods m, const std::u32string& text) {
     switch (k) {
     case Key::Char: edit([&] { tf.insert(text); return true; }); return true;
     case Key::Backspace:
-        if (tf.text.empty() && r.type == RowType::Note && rows.size() > 1) {
+        if (tf.text.empty() && !isLabel && r.type == RowType::Note && rows.size() > 1) {
             if (onContentWillChange) onContentWillChange();
             removeRow(row);
             focusRow(std::max(0, row - 1));
@@ -244,6 +245,7 @@ bool ExpressionList::keyText(Key k, Mods m, const std::u32string& text) {
         return true;
     }
     case Key::Enter:
+        if (isLabel) { focusField({row, Field::Main}); return true; }
         if (onContentWillChange) onContentWillChange();
         if (r.type == RowType::Folder) r.collapsed = false;
         addRow(row + 1);   // after a folder this lands inside it
