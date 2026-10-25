@@ -74,7 +74,7 @@ Where the speed comes from, in priority order:
 ```
 src/app      Platform.mm  NSApp/NSWindow/CAMetalLayer view, events, menus, clipboard, file/image panels,
                           CLI flags (--expr --open --image --screenshot --size --select --hover --click
-                          --view --style-menu --keypad --launch-bench --perf-hud). Device + App::init
+                          --view --style-menu --keypad --3d --launch-bench --perf-hud). Device + App::init
                           run on a background thread during AppKit startup (launch target).
              App          owns everything; routes events (popovers > keypad > top bar > list > graph);
                           analysis (tables become synthetic rows), graph items, undo, frame building
@@ -92,6 +92,9 @@ src/ui       Theme.hpp    ALL colours, sizes, fonts, timings (design tokens). No
              Keypad       on-screen keypad (main / functions / ABC pages)
              GraphView    grid/axes/labels, curve caches + parallel sampling (GCD), POIs, trace (incl.
                           implicit curves), pan/zoom, zoom buttons, settings popover; takes GraphItems
+               GraphView3D   3D mode: Scene3D (GPU surfaces, space curves and 2D curves on z = 0
+                             sampled once in world units, points, box/floor grid/axes as 3D lines),
+                             projected axis letters + ticks; drag orbits, zoom changes the box size L
 src/math     MathTree     editable structured math + all MathQuill editing commands
              Latex        MathTree <-> LaTeX (copy/paste, save files)
              Parser       MathTree -> Ast (implicit multiplication, function application, d/dx, f',
@@ -99,21 +102,27 @@ src/math     MathTree     editable structured math + all MathQuill editing comma
              Compiler     resolve (inline defs/functions, derivatives, degrees, reductions) -> broadcast
                           lists -> fold -> stack bytecode (Bytecode.hpp, shared with shaders/vm.h)
              Derivative   symbolic differentiation (chain rule for every builtin, Leibniz for ∫)
-             Analyzer     whole-graph: definitions, classification, regressions, side fields, row hash
+             Analyzer     whole-graph: definitions, classification, regressions, side fields, row hash;
+                          in 3D (`AnalyzerSettings.threeD`) z is a coordinate: Surface, Parametric3D, Point3D
              Regression   least squares (CPU double; MPS Gram + double refinement for large n·k) and
                           Levenberg–Marquardt for nonlinear models
              Vm/Builtins  CPU double interpreter (scalar + batched; loops for ∑ ∏ ∫)
-src/graph    Viewport, Grid (Desmos 1-2-5 steps), Sampler (adaptive explicit/parametric/polar,
+src/graph    Viewport, Camera3D (orbit camera, box [-L, L]^3), Grid (Desmos 1-2-5 steps), Sampler (adaptive explicit/parametric/polar,
              off-screen culling, chord simplification, pan-extension), Poi, ImplicitCpu (deep zoom)
 src/render   Renderer     one command buffer per frame: implicit compute (field -> edge refine ->
-                          marching squares -> indirect args) then a single render pass; images
+                          marching squares -> indirect args) then a single render pass; images.
+                          Pass has a memoryless Depth32Float attachment (RenderFormats.hpp)
+             Renderer3D   3D mode: surfaceGrid compute (192² VM evaluations per surface, skipped while
+                          programs + L are unchanged, so orbiting only redraws), indexed lit surfaces,
+                          depth-tested capsule lines/points, all scissored to the graph area
              Batch2D      every UI primitive in one instance buffer (SDF rects/lines/glyphs/images)
              TextAtlas    CoreText rasteriser + R8 atlas;  RingBuffer: triple-buffered shared buffers
              ShaderTypes  structs shared with MSL
 src/gpu      MpsBridge.mm the only MPS code (MPSMatrixMultiplication for regression Gram matrices)
 shaders/     ui.metal, curve.metal (tile-memory "no double blend" curves, dashed/dotted, fills),
-             implicit.metal (+ vmEvalPoints test hook), vm.h (GPU float VM incl. loop opcodes)
-tests/       test_math, test_vm (GPU vs CPU parity), test_regression_mps, test_app, test_rows
+             implicit.metal (+ vmEvalPoints test hook), vm.h (GPU float VM incl. loop opcodes),
+             surface.metal (3D surfaces + lines)
+tests/       test_math, test_vm (GPU vs CPU parity), test_regression_mps, test_app, test_app3d, test_rows
              (event-level row/editor behaviour), fixtures/showcase.json, bench.cpp (perf gate)
 ```
 Precision: the CPU evaluates in `double`, the GPU in `float` relative to the viewport centre.
@@ -126,55 +135,9 @@ are CPU-only Desmos semantics.
 Image drag handles on the graph; draggable points with expression coordinates (only plain slider
 variables drag today); actions/tickers; recursion; complex numbers; geometry and 3D calculators;
 accessibility (audio trace). Tables: column resize and drag-select.
-
-## Work in progress: 3D mode (started 2026-10-25; branch `wip/3d-mode`)
-Goal: a 2D/3D switch (button under the zoom controls + View menu "3D Mode" + `--3d` CLI flag) for a
-Desmos-3D-style mode, also used as a GPU stress test. Last commit `0140f84` (v1.1.0) builds clean;
-the 3D work below lives on branch `wip/3d-mode` (builds and tests pass; nothing 3D is drawn yet).
-
-**Done:**
-- `math/Analyzer`: `AnalyzerSettings.threeD`; new `GraphKind::Surface` (z = f(x,y) or a bare expression in
-  x, y; program in x, y), `Parametric3D` (f, g, h in t), `Point3D` (px, py, pz); `GraphPiece.h`, `pz`.
-  In 3D, `z` is a coordinate (RowCompiler passes it through; `z=…` is not a definition). Implicit 3D
-  (x²+y²+z²=9) is an error "Implicit 3D surfaces aren't supported yet" (next stage: marching cubes).
-  Test `three_d_classification` in tests/test_math.cpp.
-- `graph/Camera3D.{hpp,cpp}`: orbit camera (azimuth/elevation, box half-size L as zoom), `matrix(aspect)`
-  = proj·view·model(1/L), `project()` world → area points.
-- `render/ShaderTypes.hpp`: `Scene3DUniforms` (viewProj, clipRemap, eye.w = L, light.w = grid step,
-  gridN), `SurfaceGridUniforms`, `SurfaceStyle` (color, base vertex), `Line3D` (a.w = width; a == b is a point).
-- `shaders/surface.metal` (compiles): `surfaceGrid` kernel (VM per grid point → float4 xyz,valid),
-  `surfaceVertex/Fragment` (neighbour normals, two-sided lighting, grid lines, |z| > L clip),
-  `line3dVertex/Fragment` (screen-space capsule, depth-tested, slight bias).
-  `toView()` remaps camera NDC into the graph-area part of the full view via clipRemap:
-  a = area.w/viewW, b = (2·area.x + area.w)/viewW − 1 (y: a = area.h/viewH, b = 1 − (2·area.y + area.h)/viewH).
-- `render/RenderFormats.hpp`: shared attachment formats + `setAttachments()` (now sets Depth32Float).
-- `render/Renderer3D.hpp` + a **stub** `Renderer3D.cpp` (empty methods; not yet called), and `Scene3D` / `SurfaceDraw3D` / `GraphFrame.threeD/scene`
-  in `render/Renderer.hpp`; `Renderer` has `std::unique_ptr<Renderer3D> m_3d`.
-
-**Remaining steps:**
-1. `render/Renderer3D.cpp`: init (pipelines surfaceVertex/surfaceFragment and line3d with premultiplied
-   blending via setAttachments; compute surfaceGrid; depth states: surface = less + write, lines =
-   lessEqual no write, off = always no write); static uint32 index buffer for gridN = 192
-   ((n−1)²·6); private positions buffer (gridN²·16 B per surface, grow); encodeCompute (pack programs
-   like the implicit path: ImplicitPiece codeOffset/codeLength/constOffset; dispatch n×n×count);
-   draw (scissor to the graph area in pixels, uniforms, drawIndexedPrimitives per surface with
-   baseVertex = s·n², then lines instanced (4-vertex strip), restore scissor + depth off).
-2. `render/Renderer.cpp`: remove its local format constants/setAttachments in favour of RenderFormats.hpp;
-   memoryless Depth32Float texture in ensureTile; depth attachment on the pass (clear 1, dontCare);
-   create m_3d in init; call encodeCompute before the pass and draw right after `drawUi(0, underEnd)`
-   when `g->threeD`.
-3. `ui/GraphView`: `GraphSettings.threeD`, `Camera3D cam`; `buildFrame` → 3D path: surfaces from
-   Surface items; CPU-sample Parametric3D (t over tMin..tMax), 2D explicit/polar/parametric curves laid
-   on z = 0, Point3D as Line3D points; floor grid (alpha .12), axes (alpha .7, width 1.5), box edges
-   (alpha .15). `drawOver` in 3D: projected axis letters x/y/z and tick numbers (halo). Input in 3D:
-   drag orbits (dx·0.01, dy·0.01), scroll/pinch/zoom buttons → cam.zoom, Home → cam.reset; no trace/POIs.
-   New floating "3D"/"2D" text button (add a text variant to Widgets) toggles settings.threeD and calls
-   onSettingsChanged.
-4. `app/App`: pass `settings.threeD` to analyzeGraph; persist `graph.threeDMode` in GraphState and
-   undo snapshots; Platform: View menu item (⌘3) + `--3d` flag; add `--3d` to scripts/screenshot.sh.
-5. Theme tokens for the 3D constants (grid size 192, alphas, widths); tests (3D app flow, save/load);
-   bench metric "3d_frame_gpu_ms" (e.g. 6 heavy surfaces while orbiting); screenshot check;
-   update this section into the Architecture list; commit, push, tag.
+3D mode: implicit surfaces (x²+y²+z²=9, needs marching cubes), trace/POIs/point dragging in 3D,
+surfaces of x or y (x = f(y, z)), translucent-surface sorting, camera not saved in files, 3D
+inequalities. The 2D/3D button and View ▸ 3D Mode (⌘3) switch modes; `graph.threeDMode` is saved.
 
 ## Rules
 - **Design consistency:** every colour, size, radius, font size and animation duration comes from

@@ -72,6 +72,8 @@ public:
     void setView(double xmin, double xmax, double ymin, double ymax);
     void hoverAt(float x, float y) { mouseMoved(x, y); }
     void toggleKeypad() { m_keypad.open = !m_keypad.open; m_dirty = true; }
+    void toggle3D() { m_graph.settings.threeD = !m_graph.settings.threeD; m_needsAnalysis = true; m_dirty = true; }
+    bool is3D() const { return m_graph.settings.threeD; }
     void openStyleMenu(int row, int col);  // for tests / CLI
 
     std::function<void()> onRequestImage;  // platform: show an open panel, then call addImage()

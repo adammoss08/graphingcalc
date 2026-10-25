@@ -18,6 +18,9 @@ void iconButton(Batch2D& b, const Rect& r, Icon icon, Interaction s);
 void floatingButton(Batch2D& b, const Rect& r, Icon icon, Interaction s, bool roundTop = true,
                     bool roundBottom = true);
 
+// floatingButton with a text label in place of the icon (the 2D/3D mode toggle).
+void floatingTextButton(Batch2D& b, const Rect& r, const std::string& label, Interaction s);
+
 // Pill button with text (e.g. "add slider: a").
 float pillButton(Batch2D& b, float x, float y, const std::string& label, Interaction s, bool measureOnly = false);
 

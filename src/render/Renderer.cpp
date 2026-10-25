@@ -1,5 +1,6 @@
 #include "render/Renderer.hpp"
 #include "graph/ImplicitCpu.hpp"
+#include "render/RenderFormats.hpp"
 #include "render/Renderer3D.hpp"
 #include "render/RingBuffer.hpp"
 #include "render/ShaderTypes.hpp"
@@ -15,9 +16,6 @@ namespace calc {
 
 namespace {
 
-constexpr MTL::PixelFormat kColorFormat = MTL::PixelFormatBGRA8Unorm;
-constexpr MTL::PixelFormat kBaseFormat = MTL::PixelFormatRGBA8Unorm;
-constexpr MTL::PixelFormat kIdFormat = MTL::PixelFormatR32Uint;
 constexpr uint32_t kSegmentCapacity = 1 << 19;
 constexpr int kMaxImplicitPieces = 128;
 
@@ -26,26 +24,6 @@ NS::String* str(const char* s) { return NS::String::string(s, NS::UTF8StringEnco
 double nowMs() {
     using namespace std::chrono;
     return duration<double, std::milli>(steady_clock::now().time_since_epoch()).count();
-}
-
-void setAttachments(MTL::RenderPipelineDescriptor* d, bool writesTile, bool premultipliedBlend) {
-    auto* c0 = d->colorAttachments()->object(0);
-    c0->setPixelFormat(kColorFormat);
-    if (premultipliedBlend) {
-        c0->setBlendingEnabled(true);
-        c0->setRgbBlendOperation(MTL::BlendOperationAdd);
-        c0->setAlphaBlendOperation(MTL::BlendOperationAdd);
-        c0->setSourceRGBBlendFactor(MTL::BlendFactorOne);
-        c0->setSourceAlphaBlendFactor(MTL::BlendFactorOne);
-        c0->setDestinationRGBBlendFactor(MTL::BlendFactorOneMinusSourceAlpha);
-        c0->setDestinationAlphaBlendFactor(MTL::BlendFactorOneMinusSourceAlpha);
-    }
-    auto* c1 = d->colorAttachments()->object(1);
-    c1->setPixelFormat(kBaseFormat);
-    c1->setWriteMask(writesTile ? MTL::ColorWriteMaskAll : MTL::ColorWriteMaskNone);
-    auto* c2 = d->colorAttachments()->object(2);
-    c2->setPixelFormat(kIdFormat);
-    c2->setWriteMask(writesTile ? MTL::ColorWriteMaskAll : MTL::ColorWriteMaskNone);
 }
 
 } // namespace
@@ -74,6 +52,7 @@ struct Renderer::Impl {
     MTL::Buffer* drawArgs = nullptr;
     MTL::Texture* tileBase = nullptr;
     MTL::Texture* tileId = nullptr;
+    MTL::Texture* tileDepth = nullptr;   // memoryless; only 3D mode tests against it
 
     // Per-frame scratch, reused to avoid allocations.
     std::vector<CurveVertex> verts;
@@ -100,6 +79,7 @@ struct Renderer::Impl {
         for (auto* t : images) if (t) t->release();
         if (tileBase) tileBase->release();
         if (tileId) tileId->release();
+        if (tileDepth) tileDepth->release();
         if (uiPipe) uiPipe->release();
         if (curvePipe) curvePipe->release();
         if (implicitPipe) implicitPipe->release();
@@ -116,12 +96,15 @@ struct Renderer::Impl {
         if (tileBase && tileBase->width() == w && tileBase->height() == h) return;
         if (tileBase) tileBase->release();
         if (tileId) tileId->release();
+        if (tileDepth) tileDepth->release();
         auto* d = MTL::TextureDescriptor::texture2DDescriptor(kBaseFormat, w, h, false);
         d->setStorageMode(MTL::StorageModeMemoryless);
         d->setUsage(MTL::TextureUsageRenderTarget);
         tileBase = dev->newTexture(d);
         d->setPixelFormat(kIdFormat);
         tileId = dev->newTexture(d);
+        d->setPixelFormat(kDepthFormat);
+        tileDepth = dev->newTexture(d);
     }
 
     void ensureField(MTL::Device* dev, uint32_t w, uint32_t h, uint32_t n) {
@@ -201,6 +184,9 @@ bool Renderer::init(MTL::Device* device, const std::string& metallibPath, std::s
     m->segments = device->newBuffer(sizeof(ImplicitSegment) * kSegmentCapacity, MTL::ResourceStorageModePrivate);
     m->counter = device->newBuffer(16, MTL::ResourceStorageModePrivate);
     m->drawArgs = device->newBuffer(16, MTL::ResourceStorageModePrivate);
+
+    m_3d = std::make_unique<Renderer3D>();
+    if (!m_3d->init(device, m->lib, error)) return false;
 
     m_atlas = std::make_unique<TextAtlas>();
     m_atlas->init(device);
@@ -362,6 +348,9 @@ void Renderer::render(const FrameDesc& f, MTL::Texture* target, CA::MetalDrawabl
         ce->endEncoding();
     }
 
+    bool threeD = g && g->threeD;
+    if (threeD) m_3d->encodeCompute(cb, slot, g->scene);
+
     // ---- render pass ----
     I.ensureTile(m_device, target->width(), target->height());
     auto* rpd = MTL::RenderPassDescriptor::renderPassDescriptor();
@@ -380,6 +369,11 @@ void Renderer::render(const FrameDesc& f, MTL::Texture* target, CA::MetalDrawabl
     a2->setLoadAction(MTL::LoadActionClear);
     a2->setClearColor(MTL::ClearColor(0, 0, 0, 0));
     a2->setStoreAction(MTL::StoreActionDontCare);
+    auto* ad = rpd->depthAttachment();
+    ad->setTexture(I.tileDepth);
+    ad->setLoadAction(MTL::LoadActionClear);
+    ad->setClearDepth(1.0);
+    ad->setStoreAction(MTL::StoreActionDontCare);
 
     auto* re = cb->renderCommandEncoder(rpd);
     const auto& ui = f.ui->items();
@@ -397,6 +391,7 @@ void Renderer::render(const FrameDesc& f, MTL::Texture* target, CA::MetalDrawabl
                            NS::UInteger(to - from), NS::UInteger(from));
     };
     drawUi(0, f.underEnd);
+    if (threeD) m_3d->draw(re, slot, g->scene, g->area, fu, target->width(), target->height());
 
     if (g) {
         // Images sit on the graph paper beneath fills and curves (as in Desmos).

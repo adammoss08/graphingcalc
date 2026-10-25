@@ -14,12 +14,16 @@ struct Camera3D {
     static constexpr double kFovY = 0.62;      // radians
 
     void reset() { *this = Camera3D{}; }
+    bool isDefault() const {
+        Camera3D d;
+        return azimuth == d.azimuth && elevation == d.elevation && halfSize == d.halfSize;
+    }
     void orbit(double dAzimuth, double dElevation);
     void zoom(double factor) { halfSize /= factor; }   // factor > 1 zooms in
 
     // viewProj * model for a viewport of the given aspect (width / height).
     simd_float4x4 matrix(float aspect) const;
-    simd_float3 eye() const;      // camera position in world units
+    simd_float3 eye() const;      // camera position in unit-cube space (times L for world units)
 
     // Projects a world point into a w × h area (points, y down). Returns false if behind the camera.
     bool project(double x, double y, double z, float w, float h, float& sx, float& sy, float& depth) const;

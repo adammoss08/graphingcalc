@@ -219,6 +219,7 @@ std::string serializeGraph(const SavedGraph& g) {
     o += std::string(",\"showMinorGridlines\":") + (g.minorGrid ? "true" : "false");
     o += std::string(",\"xAxisNumbers\":") + (g.axisNumbers ? "true" : "false");
     o += std::string(",\"yAxisNumbers\":") + (g.axisNumbers ? "true" : "false");
+    if (g.threeD) o += ",\"threeDMode\":true";
     o += "},\"expressions\":{\"list\":[";
     for (size_t i = 0; i < g.rows.size(); ++i) {
         const SavedRow& r = g.rows[i];
@@ -324,6 +325,7 @@ bool parseGraph(const std::string& text, SavedGraph& out, std::string& error) {
         out.showGrid = flag("showGrid", true);
         out.minorGrid = flag("showMinorGridlines", true);
         out.axisNumbers = flag("xAxisNumbers", true);
+        out.threeD = flag("threeDMode", false);
     }
     for (const Json& e : list->arr) {
         std::string type = str(e.get("type"), "expression");

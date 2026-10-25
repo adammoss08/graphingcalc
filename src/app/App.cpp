@@ -266,7 +266,7 @@ void App::analyze() {
         }
     }
 
-    auto res = analyzeGraph(in, {m_graph.settings.degrees});
+    auto res = analyzeGraph(in, {m_graph.settings.degrees, m_graph.settings.threeD});
     for (size_t i = 0; i < rows.size(); ++i) {
         ExpressionRow& r = rows[i];
         if (r.type != RowType::Expression && r.type != RowType::Image) { r.analysis = RowAnalysis{}; continue; }

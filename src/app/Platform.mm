@@ -32,7 +32,7 @@ struct Options {
     float hoverX = 0, hoverY = 0;
     bool view = false;
     double vx0 = -10, vx1 = 10, vy0 = -10, vy1 = 10;
-    bool launchBench = false, check = false, perfHud = false, keypad = false;
+    bool launchBench = false, check = false, perfHud = false, keypad = false, threeD = false;
     std::vector<std::string> images;
     int styleMenuRow = 0;
     std::vector<std::pair<float, float>> clicks;   // simulated clicks (screenshots / parity checks)
@@ -54,6 +54,7 @@ Options parseArgs(int argc, const char** argv) {
         else if (a == "--check") o.check = true;
         else if (a == "--perf-hud") o.perfHud = true;
         else if (a == "--keypad") o.keypad = true;
+        else if (a == "--3d") o.threeD = true;
         else if (a == "--image") o.images.push_back(next());
         else if (a == "--style-menu") o.styleMenuRow = std::atoi(next().c_str());
         else if (a == "--click") {
@@ -103,6 +104,7 @@ void applyOptions(App& app, const Options& o) {
     for (auto& im : o.images)
         if (!app.addImage(im)) std::fprintf(stderr, "couldn't load image %s\n", im.c_str());
     if (o.keypad) app.toggleKeypad();
+    if (o.threeD && !app.is3D()) app.toggle3D();
     if (o.view) app.setView(o.vx0, o.vx1, o.vy0, o.vy1);
     if (o.select > 0) app.focusRow(o.select - 1);
     if (o.styleMenuRow > 0) app.openStyleMenu(o.styleMenuRow - 1, -1);
@@ -369,6 +371,7 @@ void applyOptions(App& app, const Options& o) {
 - (void)zoomOut:(id)s { self.app->zoomOut(); [self requestFrame]; }
 - (void)zoomReset:(id)s { self.app->resetZoom(); [self requestFrame]; }
 - (void)toggleKeypad:(id)s { self.app->toggleKeypad(); [self requestFrame]; }
+- (void)toggle3D:(id)s { self.app->toggle3D(); [self requestFrame]; }
 - (void)insertImage:(id)s { if (self.app->onRequestImage) self.app->onRequestImage(); }
 - (void)togglePerfHud:(id)s { self.app->perfHud = !self.app->perfHud; self.app->setNeedsRedraw(); [self requestFrame]; }
 - (void)newDocument:(id)s { self.app->newGraph(); [self requestFrame]; }
@@ -410,6 +413,7 @@ void applyOptions(App& app, const Options& o) {
 - (BOOL)validateMenuItem:(NSMenuItem*)item {
     if (item.action == @selector(undo:)) return self.app->canUndo();
     if (item.action == @selector(redo:)) return self.app->canRedo();
+    if (item.action == @selector(toggle3D:)) item.state = self.app->is3D() ? NSControlStateValueOn : NSControlStateValueOff;
     return YES;
 }
 
@@ -480,6 +484,7 @@ struct EarlyInit {
     [view addItem:[self item:@"Zoom In" action:@selector(zoomIn:) key:@"=" mods:cmd]];
     [view addItem:[self item:@"Zoom Out" action:@selector(zoomOut:) key:@"-" mods:cmd]];
     [view addItem:[self item:@"Default Zoom" action:@selector(zoomReset:) key:@"0" mods:cmd]];
+    [view addItem:[self item:@"3D Mode" action:@selector(toggle3D:) key:@"3" mods:cmd]];
     [view addItem:[NSMenuItem separatorItem]];
     [view addItem:[self item:@"Show Keypad" action:@selector(toggleKeypad:) key:@"k" mods:cmd]];
     [view addItem:[self item:@"Performance Overlay" action:@selector(togglePerfHud:) key:@"p"

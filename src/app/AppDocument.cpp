@@ -76,6 +76,7 @@ SavedGraph App::snapshot() const {
     g.showGrid = m_graph.settings.grid;
     g.minorGrid = m_graph.settings.minorGrid;
     g.axisNumbers = m_graph.settings.axisNumbers;
+    g.threeD = m_graph.settings.threeD;
     return g;
 }
 
@@ -146,6 +147,7 @@ void App::restore(const SavedGraph& g) {
     m_graph.settings.grid = g.showGrid;
     m_graph.settings.minorGrid = g.minorGrid;
     m_graph.settings.axisNumbers = g.axisNumbers;
+    m_graph.settings.threeD = g.threeD;
     if (g.focused >= 0 && g.focused < int(rows.size())) m_list.focusRow(g.focused);
     m_styleMenu.close();
     m_needsAnalysis = true;

@@ -127,6 +127,15 @@ void floatingButton(Batch2D& b, const Rect& r, Icon icon, Interaction s, bool ro
     drawIcon(b, icon, r.x + r.w * 0.5f, r.y + r.h * 0.5f, 14, IconColor);
 }
 
+void floatingTextButton(Batch2D& b, const Rect& r, const std::string& label, Interaction s) {
+    b.shadow({r.x, r.y + 1, r.w, r.h}, ZoomButtonRadius, ShadowBlur, ShadowColor);
+    b.rect(r, White, ZoomButtonRadius, 1, ZoomButtonBorder);
+    if (s == Interaction::Hovered || s == Interaction::Pressed) b.rect(r.inset(1), overlayFor(s), ZoomButtonRadius - 1);
+    float w = b.atlas().measure(Font::Ui, label, ModeButtonTextSize);
+    b.text(Font::Ui, ModeButtonTextSize, r.x + (r.w - w) * 0.5f, r.y + r.h * 0.5f + ModeButtonTextSize * 0.36f, label,
+           IconColor);
+}
+
 float pillButton(Batch2D& b, float x, float y, const std::string& label, Interaction s, bool measureOnly) {
     float size = SliderLabelSize;
     float w = b.atlas().measure(Font::Ui, label, size) + 16;

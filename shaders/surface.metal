@@ -73,7 +73,7 @@ fragment float4 surfaceFragment(SurfaceVOut in [[stage_in]], bool front [[front_
     float3 h = normalize(l + v);
     float spec = pow(max(dot(n, h), 0.0), 40.0) * 0.18;
     float3 base = st.color.rgb;
-    float3 c = base * (0.42 + 0.58 * diffuse) + spec;
+    float3 c = base * (0.58 + 0.42 * diffuse) + spec;
     // Desmos-style grid lines on the surface at each grid step in x and y.
     float2 g = in.world.xy / S.light.w;
     float2 d = abs(fract(g - 0.5) - 0.5) / max(fwidth(g), float2(1e-6));

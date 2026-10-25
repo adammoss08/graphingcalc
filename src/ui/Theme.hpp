@@ -150,6 +150,24 @@ inline constexpr float PoiDiameter = 8;
 inline constexpr float HoverPickRadius = 10;
 inline constexpr float ImplicitCellPts = 2.5f;         // GPU field grid spacing (points); see calc_bench
 
+// ---- 3D mode (Desmos 3D look) ----
+inline constexpr unsigned Surface3DGridN = 192;        // surface grid points per side (GPU-evaluated)
+inline constexpr int Max3DSurfaces = 64;
+inline constexpr float Surface3DOpacity = 1.0f;
+inline constexpr float Floor3DGridOpacity = 0.12f;
+inline constexpr float Floor3DGridWidth = 1.0f;
+inline constexpr float Axis3DOpacity = 0.7f;
+inline constexpr float Axis3DWidth = 1.5f;
+inline constexpr float Box3DOpacity = 0.15f;
+inline constexpr float Box3DWidth = 1.0f;
+inline constexpr float Curve3DSamples = 1024;          // parametric space-curve samples over the t domain
+inline constexpr float Point3DDiameter = 9;
+inline constexpr float Axis3DLabelSize = 15;
+inline constexpr float Tick3DLabelSize = 12;
+inline constexpr float Orbit3DSensitivity = 0.01f;     // radians per point dragged
+inline constexpr float ModeButtonGap = 8;              // 2D/3D toggle below the zoom buttons
+inline constexpr float ModeButtonTextSize = 14;
+
 // ---- graph controls (zoom buttons, top-right) ----
 inline constexpr float ZoomButtonSize = 36;
 inline constexpr float ZoomButtonRadius = 4;

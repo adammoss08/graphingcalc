@@ -100,3 +100,13 @@ ln/log, e^x, roots, d/dx, f′, ∑ ∏ ∫, mod/floor/round/ceil/min/max/total/
   points have a soft halo (radius 13, colour at .25; stronger when hovered/dragged).
 - **Labels:** style menu → Label. Empty label text shows the coordinates; otherwise the text, with
   `${a}` replaced by a variable's value. JSON: `showLabel`, `label`.
+
+## 3D mode (after the Desmos 3D calculator, desmos.com/3d)
+- Box [-L, L]³ with L = 10 by default; zooming changes L (surfaces re-evaluate over the new box),
+  it doesn't move the camera. Drag orbits (azimuth around z, elevation clamped short of the poles).
+- `z = f(x, y)` or a bare expression in x and y is a surface; `(a, b, c)` a point; `(f(t), g(t), h(t))`
+  a space curve over the t domain (default 0 ≤ t ≤ 1, as in 2D). 2D curves lie on the z = 0 plane.
+- Look: lit, two-sided surfaces in the row colour with darker grid lines every grid step; thin
+  light-grey box edges; faint floor grid on z = 0; dark x/y/z axes with letters past the ends and
+  grey tick numbers every second grid step. Grid step is 1-2-5, about ten intervals across the box.
+- Not yet matched: implicit surfaces, translucency, trace/POIs, point dragging in 3D.

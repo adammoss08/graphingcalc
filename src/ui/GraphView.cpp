@@ -173,15 +173,22 @@ void GraphView::setArea(const Rect& r) {
     }
 }
 
-void GraphView::resetView() { vp = Viewport::defaultFor(area.w, area.h); }
+void GraphView::resetView() {
+    if (settings.threeD) cam.reset();
+    else vp = Viewport::defaultFor(area.w, area.h);
+}
 
 bool GraphView::viewIsDefault() const {
+    if (settings.threeD) return cam.isDefault();
     Viewport d = Viewport::defaultFor(area.w, area.h);
     return std::fabs(vp.cx - d.cx) * vp.scale < 0.5 && std::fabs(vp.cy - d.cy) * vp.scale < 0.5 &&
            std::fabs(vp.scale / d.scale - 1) < 1e-6;
 }
 
-void GraphView::zoomBy(double factor) { vp.zoomAbout(area.w * 0.5, area.h * 0.5, factor); }
+void GraphView::zoomBy(double factor) {
+    if (settings.threeD) cam.zoom(factor);
+    else vp.zoomAbout(area.w * 0.5, area.h * 0.5, factor);
+}
 
 // ---- frame building ----------------------------------------------------------------------------
 
@@ -192,6 +199,13 @@ void GraphView::buildFrame(const std::vector<GraphItem>& items, int selected, Gr
     out.curves.clear();
     out.implicits.clear();
     out.images.clear();
+    out.threeD = false;
+    if (settings.threeD) {
+        m_poi = {};
+        buildFrame3D(items, selected, out);
+        return;
+    }
+    m_cache3d.clear();
     std::vector<SampleJob> jobs;
     std::unordered_set<uint64_t> used;
 
@@ -267,6 +281,7 @@ void GraphView::buildFrame(const std::vector<GraphItem>& items, int selected, Gr
 // ---- grid --------------------------------------------------------------------------------------
 
 void GraphView::drawUnder(Batch2D& b) const {
+    if (settings.threeD) return;   // the box, grid and axes are 3D lines (Renderer3D)
     b.pushClip(area);
     // The render pass clears to white, which is the graph background: no full-area rect needed.
     static_assert(GraphBg.r == 1 && GraphBg.g == 1 && GraphBg.b == 1, "graph bg must match the clear colour");
@@ -393,6 +408,10 @@ void GraphView::updatePois(const std::vector<GraphItem>& items, int selected) {
 }
 
 void GraphView::drawOver(Batch2D& b, const std::vector<GraphItem>& items, int selected) {
+    if (settings.threeD) {
+        drawOver3D(b);
+        return;
+    }
     b.pushClip(area);
     float ox = area.x, oy = area.y;
     for (const GraphItem& it : items) {
@@ -487,12 +506,13 @@ Rect GraphView::buttonRect(Button bt) const {
     case Button::ZoomIn: return {x, y + sz + ZoomButtonGap, sz, sz};
     case Button::ZoomOut: return {x, y + 2 * sz + ZoomButtonGap, sz, sz};
     case Button::Home: return {x, y + 3 * sz + 2 * ZoomButtonGap, sz, sz};
+    case Button::Mode: return {x, y + 4 * sz + 2 * ZoomButtonGap + ModeButtonGap, sz, sz};
     default: return {};
     }
 }
 
 GraphView::Button GraphView::buttonAt(float x, float y) const {
-    for (Button bt : {Button::Wrench, Button::ZoomIn, Button::ZoomOut, Button::Home}) {
+    for (Button bt : {Button::Wrench, Button::ZoomIn, Button::ZoomOut, Button::Home, Button::Mode}) {
         if (bt == Button::Home && viewIsDefault()) continue;
         if (buttonRect(bt).contains(x, y)) return bt;
     }
@@ -527,6 +547,8 @@ void GraphView::drawControls(Batch2D& b) const {
     b.line(zi.x + 1, zi.bottom(), zi.right() - 1, zi.bottom(), 1, ZoomButtonBorder);
     if (!viewIsDefault())
         widgets::floatingButton(b, buttonRect(Button::Home), widgets::Icon::Home, state(Button::Home));
+    // 2D/3D switch: labelled with the mode it switches to.
+    widgets::floatingTextButton(b, buttonRect(Button::Mode), settings.threeD ? "2D" : "3D", state(Button::Mode));
 
     if (!m_settingsOpen) return;
     Rect r = settingsRect();
@@ -649,7 +671,7 @@ bool GraphView::mouseDown(float x, float y, int clicks, Mods m, const std::vecto
     m_hoverButton = m_pressButton;
     if (m_pressButton != Button::None) return true;
     Trace t;
-    if (pickCurve(x, y, items, t)) {
+    if (!settings.threeD && pickCurve(x, y, items, t)) {
         if (onSelectRow) onSelectRow(items[t.item].row);
         const RowAnalysis& an = *items[t.item].an;
         if (an.graph == GraphKind::Point && t.piece < int(an.pieces.size()) &&
@@ -698,7 +720,8 @@ bool GraphView::mouseDragged(float x, float y, const std::vector<GraphItem>& ite
         return true;
     }
     if (m_panning) {
-        vp.pan(dx, dy);
+        if (settings.threeD) cam.orbit(-dx * Orbit3DSensitivity, dy * Orbit3DSensitivity);
+        else vp.pan(dx, dy);
         return true;
     }
     return false;
@@ -714,6 +737,12 @@ bool GraphView::mouseUp(float x, float y) {
             case Button::ZoomIn: zoomBy(ZoomButtonFactor); break;
             case Button::ZoomOut: zoomBy(1.0 / ZoomButtonFactor); break;
             case Button::Home: resetView(); break;
+            case Button::Mode:
+                settings.threeD = !settings.threeD;
+                m_trace = {};
+                m_dragPoint = {};
+                if (onSettingsChanged) onSettingsChanged();
+                break;
             default: break;
             }
         }
@@ -745,8 +774,8 @@ bool GraphView::mouseMoved(float x, float y, const std::vector<GraphItem>& items
     int hoverRow = -1;
     Trace t;
     int hoverDrag = -1;
-    if (area.contains(x, y) && hb == Button::None && hs < 0 && !settingsRect().contains(x, y) &&
-        pickCurve(x, y, items, t)) {
+    if (!settings.threeD && area.contains(x, y) && hb == Button::None && hs < 0 &&
+        !settingsRect().contains(x, y) && pickCurve(x, y, items, t)) {
         hoverRow = items[t.item].row;
         const RowAnalysis& an = *items[t.item].an;
         if (an.graph == GraphKind::Point && t.piece < int(an.pieces.size()) &&
@@ -776,13 +805,15 @@ bool GraphView::scroll(float x, float y, float dx, float dy, bool precise) {
     if (!area.contains(x, y)) return false;
     double k = precise ? ScrollZoomSensitivity : 0.1;
     double factor = std::exp(double(dy) * k);
-    vp.zoomAbout(x - area.x, y - area.y, factor);
+    if (settings.threeD) cam.zoom(factor);
+    else vp.zoomAbout(x - area.x, y - area.y, factor);
     return true;
 }
 
 bool GraphView::magnify(float x, float y, float amount) {
     if (!area.contains(x, y)) return false;
-    vp.zoomAbout(x - area.x, y - area.y, std::max(0.1, 1.0 + amount));
+    if (settings.threeD) cam.zoom(std::max(0.1, 1.0 + amount));
+    else vp.zoomAbout(x - area.x, y - area.y, std::max(0.1, 1.0 + amount));
     return true;
 }
 

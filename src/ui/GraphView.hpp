@@ -1,6 +1,7 @@
 #pragma once
 // The graph paper: grid/axes/labels, curve sampling + caching, points of interest, hover/trace,
 // pan/zoom, zoom buttons and the graph-settings popover.
+#include "graph/Camera3D.hpp"
 #include "graph/Poi.hpp"
 #include "graph/Sampler.hpp"
 #include "graph/Viewport.hpp"
@@ -20,6 +21,7 @@ struct GraphSettings {
     bool axisNumbers = true;
     bool xAxis = true, yAxis = true;
     bool degrees = false;
+    bool threeD = false;     // 3D mode (Desmos 3D): orbit camera, surfaces, space curves
 };
 
 enum class CursorKind { Arrow, IBeam, Pointer, Grab, Grabbing };
@@ -45,6 +47,7 @@ public:
     Viewport vp;
     Rect area;
     GraphSettings settings;
+    Camera3D cam;                                 // 3D mode view
     std::function<void(int row)> onSelectRow;     // clicked a curve (-1: clicked empty paper)
     std::function<void()> onSettingsChanged;      // degrees toggled etc. (re-analyse)
     // Heavy curves resample on a background queue while the old samples are drawn rescaled
@@ -85,7 +88,7 @@ public:
     double lastSampleMs() const { return m_lastSampleMs; }
 
 private:
-    enum class Button { None, Wrench, ZoomIn, ZoomOut, Home };
+    enum class Button { None, Wrench, ZoomIn, ZoomOut, Home, Mode };
     struct Trace {
         int item = -1, piece = -1;
         double x = 0, y = 0;
@@ -118,6 +121,17 @@ private:
     PoiCache m_poi;
     int m_hoverPoi = -1;
     double m_lastSampleMs = 0;
+
+    // 3D mode (GraphView3D.cpp). Space curves and 2D curves laid on z = 0 are sampled in world
+    // units, independent of the camera, so orbiting reuses them.
+    struct Curve3D {
+        uint64_t hash = 0;
+        std::vector<simd_float3> pts;   // NaN x breaks the curve
+    };
+    std::unordered_map<uint64_t, Curve3D> m_cache3d;
+    void buildFrame3D(const std::vector<GraphItem>& items, int selected, GraphFrame& out);
+    void drawOver3D(Batch2D& b) const;
+    double gridStep3D() const;
 
     Rect buttonRect(Button b) const;
     Button buttonAt(float x, float y) const;

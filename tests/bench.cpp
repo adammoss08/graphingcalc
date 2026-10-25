@@ -14,6 +14,7 @@
 #include <cstdio>
 #include <cstring>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace calc;
@@ -195,6 +196,53 @@ int main(int argc, char** argv) {
             CFRunLoopRunInMode(kCFRunLoopDefaultMode, 0, true);  // let background results land
         }
         results.push_back({"heavy_curve_zoom_frame_ms (p50)", median(zoom), 4.0, "ms"});
+        tex->release();
+    }
+
+    // 5) 3D mode: six heavy GPU surfaces (192² grid each) plus a space curve while orbiting.
+    {
+        App app;
+        std::string err;
+        app.init(dev, METALLIB_PATH, err);
+        app.setSize(W, H, 2);
+        app.toggle3D();
+        app.pasteText("z=\\sin\\left(x\\right)\\cos\\left(y\\right)\n"
+                      "z=\\frac{\\sin\\left(\\sqrt{x^{2}+y^{2}}\\right)}{\\sqrt{x^{2}+y^{2}}}\\cdot 5\n"
+                      "z=\\sum_{k=1}^{20}\\frac{\\sin\\left(kx\\right)\\cos\\left(ky\\right)}{k}\n"
+                      "z=\\frac{x^{2}-y^{2}}{10}\n"
+                      "z=e^{-\\frac{x^{2}+y^{2}}{20}}\\cdot 8-4\n"
+                      "z=\\operatorname{mod}\\left(x+y,3\\right)\n"
+                      "\\left(5\\cos\\left(t\\right),5\\sin\\left(t\\right),t\\right)");
+        app.list().blur();
+        MTL::Texture* tex = app.renderer().makeOffscreenTarget(int(W * 2), int(H * 2));
+        app.render(tex, nullptr, true);
+        // GPU: one surface edit (full re-evaluation of all six), then orbit frames, each waited on.
+        std::vector<double> cpu, gpu, gpuEval;
+        for (int i = 0; i < 8; ++i) {
+            app.graph().cam.halfSize = (i % 2) ? 10 : 10.5;   // a new box re-evaluates every surface
+            app.setNeedsRedraw();
+            app.render(tex, nullptr, true);
+            gpuEval.push_back(app.renderer().stats().gpuMs);
+        }
+        float x = 900, y = 450;
+        app.mouseDown(x, y, 1, {});
+        for (int f = 0; f < 120; ++f) {
+            bool wait = f < 60;   // first half: GPU time per frame; second: CPU time, pipelined
+            x += 6;
+            y += (f % 60 < 30 ? 1.5f : -1.5f);
+            app.mouseDragged(x, y);
+            app.render(tex, nullptr, wait);
+            if (wait && f >= 3) gpu.push_back(app.renderer().stats().gpuMs);
+            if (!wait) {
+                cpu.push_back(app.lastFrameCpuMs());
+                // Pace like a 60 Hz display: back-to-back frames would time the ring's GPU back-pressure.
+                std::this_thread::sleep_for(std::chrono::milliseconds(16));
+            }
+        }
+        app.mouseUp(x, y);
+        results.push_back({"3d_surface_eval_gpu_ms (p50)", median(gpuEval), 8.0, "ms"});
+        results.push_back({"3d_frame_gpu_ms (p50)", median(gpu), 6.0, "ms"});
+        results.push_back({"3d_orbit_cpu_ms (p50)", median(cpu), 4.0, "ms"});
         tex->release();
     }
 
