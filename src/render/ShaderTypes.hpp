@@ -6,11 +6,13 @@
 using namespace metal;
 typedef float4 sh_float4;
 typedef float2 sh_float2;
+typedef float4x4 sh_float4x4;
 typedef uint sh_uint;
 #else
 #include <simd/simd.h>
 typedef simd_float4 sh_float4;
 typedef simd_float2 sh_float2;
+typedef simd_float4x4 sh_float4x4;
 typedef uint32_t sh_uint;
 #endif
 
@@ -87,4 +89,35 @@ struct FillUniforms {
     sh_float2 origin;
     float strictEdge;       // unused by fill; kept for alignment
     float pad;
+};
+
+// ---- 3D mode ------------------------------------------------------------------------------------
+
+struct Scene3DUniforms {
+    sh_float4x4 viewProj;   // world -> clip (camera space of the [-L, L]^3 box)
+    sh_float4 clipRemap;    // camera NDC -> full-view NDC for the graph area: x' = x*a + b (xy: a, zw: b)
+    sh_float4 eye;          // camera position (world units), w = L (box half size)
+    sh_float4 light;        // xyz: direction towards the light (world), w = grid step on surfaces
+    sh_uint gridN;          // surface grid resolution (points per side)
+    sh_uint pad0, pad1, pad2;
+};
+
+struct SurfaceGridUniforms {
+    float halfSize;         // L
+    sh_uint gridN;
+    sh_uint count;          // surfaces in this dispatch
+    sh_uint pad;
+};
+
+struct SurfaceStyle {
+    sh_float4 color;        // rgb + opacity
+    sh_uint base;           // first vertex of this surface in the positions buffer
+    sh_uint pad0, pad1, pad2;
+};
+
+// A depth-tested 3D line segment (a == b draws a round point).
+struct Line3D {
+    sh_float4 a;            // xyz world, w = width (points)
+    sh_float4 b;            // xyz world
+    sh_float4 color;        // straight RGBA
 };

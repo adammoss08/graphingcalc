@@ -44,12 +44,30 @@ struct ImageDraw {
     float opacity;
 };
 
+struct SurfaceDraw3D {
+    const Program* program;   // z = f(x, y)
+    Color color;
+    float opacity = 1;
+};
+
+// Everything 3D mode draws in the graph area.
+struct Scene3D {
+    simd_float4x4 viewProj;
+    simd_float3 eye;          // camera position, world units
+    float halfSize = 10;      // L: the visible box is [-L, L]^3
+    float gridStep = 2;       // grid spacing (floor grid and surface lines)
+    std::vector<SurfaceDraw3D> surfaces;
+    std::vector<Line3D> lines;   // axes, grids, space curves, points (a == b)
+};
+
 struct GraphFrame {
     Rect area;                // graph area on screen (points)
     Viewport vp;
     std::vector<CurveDraw> curves;
     std::vector<ImplicitDraw> implicits;
     std::vector<ImageDraw> images;
+    bool threeD = false;
+    Scene3D scene;
 };
 
 struct FrameDesc {
@@ -70,6 +88,8 @@ struct RenderStats {
     size_t curveVertices = 0;
     size_t uiInstances = 0;
 };
+
+class Renderer3D;
 
 class Renderer {
 public:
@@ -98,6 +118,7 @@ private:
     std::unique_ptr<Impl> m;
     MTL::Device* m_device = nullptr;
     std::unique_ptr<TextAtlas> m_atlas;
+    std::unique_ptr<Renderer3D> m_3d;
     RenderStats m_stats;
 };
 

@@ -1,5 +1,6 @@
 #include "render/Renderer.hpp"
 #include "graph/ImplicitCpu.hpp"
+#include "render/Renderer3D.hpp"
 #include "render/RingBuffer.hpp"
 #include "render/ShaderTypes.hpp"
 

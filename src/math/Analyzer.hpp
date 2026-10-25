@@ -23,12 +23,17 @@ enum class GraphKind : uint8_t {
     Parametric,  // (f(t), g(t))
     Implicit,    // F(x, y) = 0         f: program in x, y
     Point,       // (a, b)              px, py
+    // 3D mode
+    Surface,     // z = f(x, y)         f: program in x, y
+    Parametric3D,// (f(t), g(t), h(t))
+    Point3D,     // (a, b, c)           px, py, pz
 };
 
 struct GraphPiece {
     Program f, g;          // see GraphKind
     Program region;        // inequalities: region where region(x, y) > 0 (or >= 0)
-    double px = 0, py = 0; // points
+    Program h;             // Parametric3D: z(t)
+    double px = 0, py = 0, pz = 0; // points
     std::string dragX, dragY;  // points: slider variables a drag on the graph updates ("" = fixed)
 };
 
@@ -73,6 +78,7 @@ struct RowInput {
 
 struct AnalyzerSettings {
     bool degrees = false;
+    bool threeD = false;     // 3D mode: z is a coordinate; surfaces, 3D points and space curves
 };
 
 std::vector<RowAnalysis> analyzeGraph(const std::vector<RowInput>& rows, const AnalyzerSettings& s);

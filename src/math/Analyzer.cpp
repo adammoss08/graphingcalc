@@ -45,7 +45,9 @@ void mixDouble(uint64_t& h, double d) { uint64_t u; std::memcpy(&u, &d, 8); mix(
 
 class RowCompiler {
 public:
-    RowCompiler(const Definitions& defs, const AnalyzerSettings& s) : m_resolver(defs, s.degrees) {}
+    RowCompiler(const Definitions& defs, const AnalyzerSettings& s) : m_resolver(defs, s.degrees) {
+        if (s.threeD) m_resolver.setPassThrough({"z"});  // z is a coordinate in 3D mode
+    }
 
     int resolve(const ParsedRow& row, int root) { return m_resolver.resolve(row.pool, root, m_pool); }
     AstPool& pool() { return m_pool; }
@@ -142,6 +144,32 @@ void analyzeGraphRow(const ParsedRow& row, const Definitions& defs, const Analyz
         }
         bool allTuples = true;
         for (int it : items) allTuples &= P[it].op == AstOp::Tuple;
+        if (allTuples && !items.empty() && settings.threeD) {
+            // 3D: (a, b, c) points and (f(t), g(t), h(t)) space curves; (a, b) sits at z = 0.
+            bool param = false;
+            for (int it : items) param |= rc.uses(it, "t");
+            for (int it : items) rc.checkVars(it, {"t"});
+            if (failIfMissing()) return;
+            out.kind = RowKind::Graph;
+            for (int it : items) {
+                const AstNode& tup = P[it];
+                if (tup.kids.size() < 2 || tup.kids.size() > 3) throw ParseError("Points need 2 or 3 coordinates");
+                GraphPiece pc;
+                int zk = tup.kids.size() == 3 ? tup.kids[2] : P.num(0);
+                if (param) {
+                    pc.f = rc.program(tup.kids[0], kParamsT);
+                    pc.g = rc.program(tup.kids[1], kParamsT);
+                    pc.h = rc.program(zk, kParamsT);
+                } else {
+                    pc.px = evalConstant(P, tup.kids[0]);
+                    pc.py = evalConstant(P, tup.kids[1]);
+                    pc.pz = evalConstant(P, zk);
+                }
+                out.pieces.push_back(std::move(pc));
+            }
+            out.graph = param ? GraphKind::Parametric3D : GraphKind::Point3D;
+            return;
+        }
         if (allTuples && !items.empty()) {
             bool param = false;
             for (int it : items) param |= rc.uses(it, "t");
@@ -178,6 +206,19 @@ void analyzeGraphRow(const ParsedRow& row, const Definitions& defs, const Analyz
         for (int it : items) if (P[it].op == AstOp::Tuple) throw ParseError("Can't mix points and numbers");
         bool usesX = false, usesY = false;
         for (int it : items) { usesX |= rc.uses(it, "x"); usesY |= rc.uses(it, "y"); }
+        if (settings.threeD && (usesX || usesY)) {
+            // Desmos 3D: a bare expression in x and y is the surface z = f(x, y).
+            for (int it : items) rc.checkVars(it, {"x", "y"});
+            if (failIfMissing()) return;
+            out.kind = RowKind::Graph;
+            out.graph = GraphKind::Surface;
+            for (int it : items) {
+                GraphPiece pc;
+                pc.f = rc.program(it, kParamsXY);
+                out.pieces.push_back(std::move(pc));
+            }
+            return;
+        }
         if (usesY) {
             for (int it : items) rc.checkVars(it, {"x", "y"});
             if (failIfMissing()) return;
@@ -269,6 +310,24 @@ void analyzeGraphRow(const ParsedRow& row, const Definitions& defs, const Analyz
         return true;
     };
 
+    if (settings.threeD) {
+        auto surface = [&](int fnode) {
+            rc.checkVars(fnode, {"x", "y"});
+            if (failIfMissing()) return;
+            out.graph = GraphKind::Surface;
+            out.rel = Cmp::Eq;
+            out.strict = false;
+            for (int b : rc.broadcast(fnode)) {
+                GraphPiece pc;
+                pc.f = rc.program(b, kParamsXY);
+                out.pieces.push_back(std::move(pc));
+            }
+        };
+        if (lhsVar && lname == "z" && !rc.uses(rhs, "z")) { surface(rhs); return; }
+        if (rhsVar && rname == "z" && !rc.uses(lhs, "z")) { surface(lhs); return; }
+        if (rc.uses(lhs, "z") || rc.uses(rhs, "z"))
+            throw ParseError("Implicit 3D surfaces aren't supported yet: write z = f(x, y)");
+    }
     if (lhsVar && lname == "y" && explicitIn("y", "x", rhs, false)) return;
     if (rhsVar && rname == "y" && explicitIn("y", "x", lhs, true)) return;
     if (lhsVar && lname == "x" && explicitIn("x", "y", rhs, false)) return;
@@ -480,7 +539,7 @@ std::vector<RowAnalysis> analyzeGraph(const std::vector<RowInput>& rows, const A
                 pr.params = params;
                 pr.defRoot = st.exprs[1];
             }
-        } else if (lhs.op == AstOp::Var && !isCoordinateName(lhs.name)) {
+        } else if (lhs.op == AstOp::Var && !isCoordinateName(lhs.name) && !(settings.threeD && lhs.name == "z")) {
             pr.def = ParsedRow::Def::Var;
             pr.name = lhs.name;
             pr.defRoot = st.exprs[1];

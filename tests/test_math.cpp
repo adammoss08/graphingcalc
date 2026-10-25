@@ -421,3 +421,32 @@ TEST(batched_loops_match_scalar) {
         }
     }
 }
+
+// ---- 3D mode -------------------------------------------------------------------------------------
+
+TEST(three_d_classification) {
+    auto a3 = [](std::initializer_list<const char*> rows) {
+        std::vector<MathTree> trees;
+        for (auto* l : rows) { trees.emplace_back(); trees.back().insertLatex(l); }
+        std::vector<RowInput> in;
+        for (auto& t : trees) in.push_back({&t});
+        AnalyzerSettings s;
+        s.threeD = true;
+        return analyzeGraph(in, s);
+    };
+    auto r = a3({"z=x^{2}-y^{2}", "\\sin x\\cos y", "\\left(1,2,3\\right)", "\\left(\\cos t,\\sin t,t\\right)",
+                 "x^{2}+y^{2}+z^{2}=9", "y=x", "a=2", "z=a\\cdot x"});
+    CHECK(r[0].graph == GraphKind::Surface);
+    CHECK_NEAR(evaluate(r[0].pieces[0].f, 3, 2), 5, 0);
+    CHECK(r[1].graph == GraphKind::Surface);
+    CHECK(r[2].graph == GraphKind::Point3D && r[2].pieces[0].pz == 3);
+    CHECK(r[3].graph == GraphKind::Parametric3D);
+    CHECK_NEAR(evaluate(r[3].pieces[0].h, 0, 0, 1.5), 1.5, 0);
+    CHECK(r[4].kind == RowKind::Error);            // implicit 3D: not yet
+    CHECK(r[5].graph == GraphKind::ExplicitY);     // 2D curves still work (drawn on the floor)
+    CHECK(r[6].kind == RowKind::Slider);
+    CHECK_NEAR(evaluate(r[7].pieces[0].f, 2, 0), 4, 0);
+    // In 2D mode, z stays an ordinary variable.
+    auto two = analyze({"z=5", "y=zx"});
+    CHECK(two[0].kind == RowKind::Slider);
+}
