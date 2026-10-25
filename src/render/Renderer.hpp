@@ -12,6 +12,7 @@
 #include <Metal/Metal.hpp>
 #include <QuartzCore/QuartzCore.hpp>
 
+#include <functional>
 #include <memory>
 #include <string>
 #include <vector>
@@ -45,9 +46,19 @@ struct ImageDraw {
 };
 
 struct SurfaceDraw3D {
-    const Program* program;   // z = f(x, y)
+    const Program* program;   // explicit: z = f(x, y); parametric: x = f(u, v)
     Color color;
     float opacity = 1;
+    const Program* g = nullptr;   // parametric surfaces: y = g(u, v), z = h(u, v)
+    const Program* h = nullptr;
+    float u0 = 0, u1 = 1, v0 = 0, v1 = 1;
+};
+
+struct ImplicitDraw3D {
+    const Program* program;   // F(x, y, z) (z in the t slot); draws F = 0
+    Color color;
+    float opacity = 1;        // < 1: translucent pass (inequalities)
+    simd_float3 boxMin, boxMax;   // grid bounds: where F is defined, within the view box
 };
 
 // Everything 3D mode draws in the graph area.
@@ -57,6 +68,7 @@ struct Scene3D {
     float halfSize = 10;      // L: the visible box is [-L, L]^3
     float gridStep = 2;       // grid spacing (floor grid and surface lines)
     std::vector<SurfaceDraw3D> surfaces;
+    std::vector<ImplicitDraw3D> implicits;
     std::vector<Line3D> lines;   // axes, grids, space curves, points (a == b)
 };
 
@@ -87,6 +99,10 @@ struct RenderStats {
     double gpuMs = 0;            // last completed frame
     size_t curveVertices = 0;
     size_t uiInstances = 0;
+    // 3D implicit meshes (last completed rebuild)
+    uint32_t meshVertices = 0, meshTriangles = 0;
+    bool meshOverflowed = false;
+    uint32_t gpuErrors = 0;      // command buffers that failed since launch (tests assert 0)
 };
 
 class Renderer3D;
@@ -112,6 +128,12 @@ public:
     int loadImage(const std::string& path, float& aspect);
 
     const RenderStats& stats() const { return m_stats; }
+    // GPU work that finished and needs another frame (a 3D mesh outgrew its buffers). Called on
+    // the main queue.
+    std::function<void()> onNeedsFrame;
+    bool wantsAnotherFrame() const;
+    // Tests: copies of the current implicit mesh (shared buffers): vertices xyz, triangle indices.
+    void debugMesh(std::vector<float>& xyz, std::vector<uint32_t>& tris) const;
 
 private:
     struct Impl;
@@ -120,6 +142,7 @@ private:
     std::unique_ptr<TextAtlas> m_atlas;
     std::unique_ptr<Renderer3D> m_3d;
     RenderStats m_stats;
+    std::shared_ptr<Renderer*> m_alive = std::make_shared<Renderer*>(this);   // see render()
 };
 
 } // namespace calc

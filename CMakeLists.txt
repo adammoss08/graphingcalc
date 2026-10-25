@@ -1,6 +1,6 @@
 cmake_minimum_required(VERSION 3.24)
 # The app version (About box, CFBundleShortVersionString). Bump it here when tagging a release.
-project(GraphingCalc VERSION 1.2.1 LANGUAGES C CXX OBJCXX)
+project(GraphingCalc VERSION 1.3.0 LANGUAGES C CXX OBJCXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -71,10 +71,10 @@ add_dependencies(GraphingCalc shaders)
 file(GLOB TEST_SRC CONFIGURE_DEPENDS ${CMAKE_SOURCE_DIR}/tests/test_*.cpp)
 add_executable(calc_tests ${CMAKE_SOURCE_DIR}/tests/main.cpp ${TEST_SRC})
 target_link_libraries(calc_tests PRIVATE calc_core)
-target_compile_definitions(calc_tests PRIVATE METALLIB_PATH="${METALLIB}")
+target_compile_definitions(calc_tests PRIVATE METALLIB_PATH="${METALLIB}" FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures")
 add_dependencies(calc_tests shaders)
 
 add_executable(calc_bench ${CMAKE_SOURCE_DIR}/tests/bench.cpp)
 target_link_libraries(calc_bench PRIVATE calc_core)
-target_compile_definitions(calc_bench PRIVATE METALLIB_PATH="${METALLIB}")
+target_compile_definitions(calc_bench PRIVATE METALLIB_PATH="${METALLIB}" FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/fixtures")
 add_dependencies(calc_bench shaders)

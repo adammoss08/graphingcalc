@@ -7,6 +7,7 @@
 #include "render/ShaderTypes.hpp"
 
 #include <CoreGraphics/CoreGraphics.h>
+#include <dispatch/dispatch.h>
 #include <ImageIO/ImageIO.h>
 
 #include <atomic>
@@ -66,6 +67,7 @@ struct Renderer::Impl {
     std::vector<MTL::Texture*> images;   // loadImage handles
 
     std::atomic<double> gpuMs{0};
+    std::atomic<uint32_t> gpuErrors{0};
     MTL::CommandBuffer* lastCb = nullptr;   // retained; deep-zoom CPU uploads wait on it
     std::vector<float> cpuField, cpuH, cpuV;
 
@@ -131,7 +133,10 @@ struct Renderer::Impl {
 };
 
 Renderer::Renderer() : m(std::make_unique<Impl>()) {}
-Renderer::~Renderer() = default;
+Renderer::~Renderer() {
+    // Completion handlers use m_3d and Impl: let every frame in flight finish before members go.
+    if (m) m->ring.drain();
+}
 
 bool Renderer::init(MTL::Device* device, const std::string& metallibPath, std::string& error) {
     m_device = device;
@@ -482,10 +487,22 @@ void Renderer::render(const FrameDesc& f, MTL::Texture* target, CA::MetalDrawabl
 
     if (drawable) cb->presentDrawable(drawable);
     Impl* impl = m.get();
-    cb->addCompletedHandler([impl](MTL::CommandBuffer* done) {
+    Renderer3D* r3 = m_3d.get();
+    std::weak_ptr<Renderer*> alive = m_alive;
+    cb->addCompletedHandler([impl, r3, alive, slot](MTL::CommandBuffer* done) {
+        // A 3D mesh that outgrew its buffers is rebuilt larger on the next frame: ask for one.
+        // (The main-queue hop holds a weak reference: the renderer may be gone by then.)
+        if (r3->completed(slot))
+            dispatch_async_f(dispatch_get_main_queue(), new std::weak_ptr<Renderer*>(alive), [](void* ctx) {
+                auto* w = static_cast<std::weak_ptr<Renderer*>*>(ctx);
+                if (auto p = w->lock())
+                    if ((*p)->onNeedsFrame) (*p)->onNeedsFrame();
+                delete w;
+            });
         double ms = (done->GPUEndTime() - done->GPUStartTime()) * 1000.0;
         impl->gpuMs.store(ms);
         if (done->status() == MTL::CommandBufferStatusError) {
+            impl->gpuErrors.fetch_add(1);
             // A GPU fault (timeout, page fault, invalid resource) would otherwise just drop the frame.
             static std::atomic<int> reported{0};
             if (reported.fetch_add(1) < 20) {
@@ -506,8 +523,14 @@ void Renderer::render(const FrameDesc& f, MTL::Texture* target, CA::MetalDrawabl
     m_stats.uiInstances = ui.size();
     if (wait) cb->waitUntilCompleted();
     m_stats.gpuMs = I.gpuMs.load();
+    m_3d->meshStats(m_stats.meshVertices, m_stats.meshTriangles, m_stats.meshOverflowed);
+    m_stats.gpuErrors = I.gpuErrors.load();
     pool->release();
 }
+
+bool Renderer::wantsAnotherFrame() const { return m_3d && m_3d->pendingRebuild(); }
+
+void Renderer::debugMesh(std::vector<float>& xyz, std::vector<uint32_t>& tris) const { m_3d->debugMesh(xyz, tris); }
 
 int Renderer::loadImage(const std::string& path, float& aspect) {
     CFStringRef cfPath = CFStringCreateWithCString(nullptr, path.c_str(), kCFStringEncodingUTF8);

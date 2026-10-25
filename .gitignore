@@ -7,3 +7,4 @@ build/
 !tests/fixtures/*.png
 .cache/
 test-*.txt
+build-*/

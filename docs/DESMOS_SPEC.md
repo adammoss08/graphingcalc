@@ -109,7 +109,12 @@ ln/log, e^x, roots, d/dx, f′, ∑ ∏ ∫, mod/floor/round/ceil/min/max/total/
 - Look: lit, two-sided surfaces in the row colour with darker grid lines every grid step; thin
   light-grey box edges; faint floor grid on z = 0; dark x/y/z axes with letters past the ends and
   grey tick numbers every second grid step. Grid step is 1-2-5, about ten intervals across the box.
-- Not yet matched: implicit surfaces, translucency, trace/POIs, point dragging in 3D.
+- Implicit surfaces (1.3.0): any other relation in x, y, z (x²+y²+z²=9, y = x², x = 3, r = 2) is a
+  surface F = 0; restrictions {…} clip it. Spherical ρ (distance from origin) and φ (angle from +z),
+  cylindrical r and θ.
+- Parametric surfaces (f(u,v), g(u,v), h(u,v)) over 0 ≤ u, v ≤ 1, with u/v lines on the surface.
+- Inequalities (z < f, F < c) draw their boundary translucent.
+- Not yet matched: trace/POIs, point dragging in 3D, u/v domain fields.
 
 ## Editing details (1.2.1)
 - A math field wider than its box scrolls horizontally to keep the caret visible (MathQuill sets

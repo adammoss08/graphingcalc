@@ -178,6 +178,11 @@ void GraphView::resetView() {
     else vp = Viewport::defaultFor(area.w, area.h);
 }
 
+void GraphView::resetAllViews() {
+    cam.reset();
+    vp = Viewport::defaultFor(area.w, area.h);
+}
+
 bool GraphView::viewIsDefault() const {
     if (settings.threeD) return cam.isDefault();
     Viewport d = Viewport::defaultFor(area.w, area.h);
@@ -206,6 +211,7 @@ void GraphView::buildFrame(const std::vector<GraphItem>& items, int selected, Gr
         return;
     }
     m_cache3d.clear();
+    m_box3d.clear();
     std::vector<SampleJob> jobs;
     std::unordered_set<uint64_t> used;
 
@@ -408,7 +414,7 @@ void GraphView::updatePois(const std::vector<GraphItem>& items, int selected) {
 
 void GraphView::drawOver(Batch2D& b, const std::vector<GraphItem>& items, int selected) {
     if (settings.threeD) {
-        drawOver3D(b);
+        drawOver3D(b, items);
         return;
     }
     b.pushClip(area);

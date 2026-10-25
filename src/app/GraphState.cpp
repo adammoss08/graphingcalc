@@ -220,6 +220,9 @@ std::string serializeGraph(const SavedGraph& g) {
     o += std::string(",\"xAxisNumbers\":") + (g.axisNumbers ? "true" : "false");
     o += std::string(",\"yAxisNumbers\":") + (g.axisNumbers ? "true" : "false");
     if (g.threeD) o += ",\"threeDMode\":true";
+    if (g.hasCamera3D)
+        o += ",\"camera3D\":{\"azimuth\":" + num(g.camAzimuth) + ",\"elevation\":" + num(g.camElevation) +
+             ",\"halfSize\":" + num(g.camHalfSize) + "}";
     o += "},\"expressions\":{\"list\":[";
     for (size_t i = 0; i < g.rows.size(); ++i) {
         const SavedRow& r = g.rows[i];
@@ -326,6 +329,14 @@ bool parseGraph(const std::string& text, SavedGraph& out, std::string& error) {
         out.minorGrid = flag("showMinorGridlines", true);
         out.axisNumbers = flag("xAxisNumbers", true);
         out.threeD = flag("threeDMode", false);
+        if (const Json* c = g->get("camera3D")) {
+            auto field = [&](const char* k, double def) { const Json* j = c->get(k); return j ? j->num(def) : def; };
+            out.camAzimuth = field("azimuth", 0);
+            out.camElevation = field("elevation", 0);
+            out.camHalfSize = field("halfSize", 10);
+            out.hasCamera3D = std::isfinite(out.camAzimuth) && std::isfinite(out.camElevation) &&
+                              std::isfinite(out.camHalfSize) && out.camHalfSize > 0;
+        }
     }
     for (const Json& e : list->arr) {
         std::string type = str(e.get("type"), "expression");

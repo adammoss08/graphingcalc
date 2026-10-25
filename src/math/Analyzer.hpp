@@ -27,6 +27,8 @@ enum class GraphKind : uint8_t {
     Surface,     // z = f(x, y)         f: program in x, y
     Parametric3D,// (f(t), g(t), h(t))
     Point3D,     // (a, b, c)           px, py, pz
+    Implicit3D,  // F(x, y, z) = 0      f: program in x, y and z (z compiles to OP_T)
+    ParametricSurface, // (f(u,v), g(u,v), h(u,v)): f, g, h programs in u (OP_X) and v (OP_Y)
 };
 
 struct GraphPiece {

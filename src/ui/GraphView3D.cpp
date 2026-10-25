@@ -77,6 +77,55 @@ bool inBox(simd_float3 p, float L) {
     return std::fabs(p.x) <= k && std::fabs(p.y) <= k && std::fabs(p.z) <= k;
 }
 
+// Where to grid an implicit surface F(x, y, z) = 0 inside the box [-L, L]^3: a coarse probe in
+// double finds where F is defined (restrictions, sqrt of negatives...) and, within that, where it
+// changes sign. The GPU grid then spends its resolution there. Thin features smaller than a probe
+// cell are still found by the fine grid when the bounds fall back to the defined region.
+void implicitBounds(const Program& f, double L, bool& any, simd_float3& lo, simd_float3& hi) {
+    const int n = theme::Implicit3DProbeN;
+    const size_t total = size_t(n) * n * n;
+    std::vector<double> xs(total), ys(total), zs(total), out(total);
+    double step = 2 * L / (n - 1);
+    for (int k = 0, i = 0; k < n; ++k)
+        for (int j = 0; j < n; ++j)
+            for (int q = 0; q < n; ++q, ++i) {
+                xs[i] = -L + q * step;
+                ys[i] = -L + j * step;
+                zs[i] = -L + k * step;
+            }
+    evaluateBatch(f, int(total), xs.data(), ys.data(), zs.data(), out.data());
+    auto at = [&](int q, int j, int k) { return out[(size_t(k) * n + j) * n + q]; };
+    int dLo[3] = {n, n, n}, dHi[3] = {-1, -1, -1}, sLo[3] = {n, n, n}, sHi[3] = {-1, -1, -1};
+    for (int k = 0; k < n; ++k)
+        for (int j = 0; j < n; ++j)
+            for (int q = 0; q < n; ++q) {
+                double v = at(q, j, k);
+                if (!std::isfinite(v)) continue;
+                int c[3] = {q, j, k};
+                for (int a = 0; a < 3; ++a) { dLo[a] = std::min(dLo[a], c[a]); dHi[a] = std::max(dHi[a], c[a]); }
+                // sign change towards the +x/+y/+z neighbours
+                bool change = false;
+                if (q + 1 < n) { double w = at(q + 1, j, k); change |= std::isfinite(w) && (v >= 0) != (w >= 0); }
+                if (j + 1 < n) { double w = at(q, j + 1, k); change |= std::isfinite(w) && (v >= 0) != (w >= 0); }
+                if (k + 1 < n) { double w = at(q, j, k + 1); change |= std::isfinite(w) && (v >= 0) != (w >= 0); }
+                if (change)
+                    for (int a = 0; a < 3; ++a) { sLo[a] = std::min(sLo[a], c[a]); sHi[a] = std::max(sHi[a], c[a] + 1); }
+            }
+    any = dHi[0] >= 0;
+    if (!any) return;
+    bool useSign = sHi[0] >= 0;
+    // Where the surface reaches the box, grid two fine cells past it: the renderer clips at the box
+    // faces exactly (clip planes), so edges there are straight, not a cell staircase.
+    double over = 2 * 2 * L / (theme::Implicit3DGridN - 1);
+    for (int a = 0; a < 3; ++a) {
+        int l = useSign ? sLo[a] : dLo[a], h = useSign ? sHi[a] : dHi[a];
+        // One probe cell of margin: features between probe samples near the edge still fit.
+        double lw = -L + (l - 1) * step, hw = -L + (h + 1) * step;
+        lo[a] = float(lw <= -L ? -L - over : lw);
+        hi[a] = float(hw >= L ? L + over : hw);
+    }
+}
+
 std::string tickText(double v) {
     char buf[32];
     std::snprintf(buf, sizeof buf, "%.6g", v);
@@ -106,6 +155,7 @@ void GraphView::buildFrame3D(const std::vector<GraphItem>& items, int selected, 
     sc.halfSize = Lf;
     sc.gridStep = float(gridStep3D());
     sc.surfaces.clear();
+    sc.implicits.clear();
     sc.lines.clear();
 
     // Box edges, floor grid (z = 0), axes.
@@ -142,8 +192,29 @@ void GraphView::buildFrame3D(const std::vector<GraphItem>& items, int selected, 
             const GraphPiece& pc = an.pieces[p];
             switch (an.graph) {
             case GraphKind::Surface:
-                sc.surfaces.push_back({&pc.f, st.color, Surface3DOpacity});
+                sc.surfaces.push_back({&pc.f, st.color, an.rel == Cmp::Eq ? Surface3DOpacity : Inequality3DOpacity});
                 break;
+            case GraphKind::ParametricSurface: {
+                SurfaceDraw3D sd{&pc.f, st.color, Surface3DOpacity};
+                sd.g = &pc.g;
+                sd.h = &pc.h;
+                sc.surfaces.push_back(sd);
+                break;
+            }
+            case GraphKind::Implicit3D: {
+                uint64_t k = it.key + p;
+                used.insert(k);
+                ImplicitBox3D& bx = m_box3d[k];
+                uint64_t h = mix3(pc.f.hash(), L, 0, 0);
+                if (bx.hash != h) {
+                    implicitBounds(pc.f, L, bx.any, bx.lo, bx.hi);
+                    bx.hash = h;
+                }
+                if (!bx.any) break;
+                float opacity = an.rel == Cmp::Eq ? Surface3DOpacity : Inequality3DOpacity;
+                sc.implicits.push_back({&pc.f, st.color, opacity, bx.lo, bx.hi});
+                break;
+            }
             case GraphKind::Point3D: case GraphKind::Point: {
                 if (!st.showPoints) break;
                 simd_float3 q = simd_make_float3(float(pc.px), float(pc.py), float(pc.pz));
@@ -181,9 +252,13 @@ void GraphView::buildFrame3D(const std::vector<GraphItem>& items, int selected, 
         if (!used.count(it->first)) it = m_cache3d.erase(it);
         else ++it;
     }
+    for (auto it = m_box3d.begin(); it != m_box3d.end();) {
+        if (!used.count(it->first)) it = m_box3d.erase(it);
+        else ++it;
+    }
 }
 
-void GraphView::drawOver3D(Batch2D& b) const {
+void GraphView::drawOver3D(Batch2D& b, const std::vector<GraphItem>& items) const {
     b.pushClip(area);
     double L = cam.halfSize;
     TextAtlas& atlas = b.atlas();
@@ -197,6 +272,19 @@ void GraphView::drawOver3D(Batch2D& b) const {
     if (settings.xAxis) put(L * k, 0, 0, "x", Axis3DLabelSize, Text);
     if (settings.yAxis) put(0, L * k, 0, "y", Axis3DLabelSize, Text);
     put(0, 0, L * k, "z", Axis3DLabelSize, Text);
+    // Point labels: coordinates (or the label text) beside the projected point.
+    for (const GraphItem& it : items) {
+        if (it.style.hidden || !it.style.showLabel || it.an->graph != GraphKind::Point3D) continue;
+        for (const GraphPiece& pc : it.an->pieces) {
+            float sx, sy, depth;
+            if (!std::isfinite(pc.px + pc.py + pc.pz) || !cam.project(pc.px, pc.py, pc.pz, area.w, area.h, sx, sy, depth))
+                continue;
+            std::string t = it.style.label.empty()
+                                ? "(" + tickText(pc.px) + ", " + tickText(pc.py) + ", " + tickText(pc.pz) + ")"
+                                : labelText(it.style, pc.px, pc.py);
+            b.text(Font::Ui, CoordLabelSize, area.x + sx + 10, area.y + sy - 10, t, Text, LabelHalo);
+        }
+    }
     if (settings.axisNumbers) {
         double step = gridStep3D() * 2;
         for (double v = std::ceil(-L / step) * step; v <= L * 1.0001; v += step) {

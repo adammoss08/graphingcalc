@@ -1,0 +1,5 @@
+a=0
+n=18
+sin(n*x+a)*cos(n*y-a)+sin(n*y+a)*cos(n*z-a)+sin(n*z+a)*cos(n*x-a)+0.2*sin(3*n*(x+y+z)+2*a)=0{x^2+y^2+z^2<25}
+sin(n*x+a)*cos(n*y-a)+sin(n*y+a)*cos(n*z-a)+sin(n*z+a)*cos(n*x-a)+0.2*sin(3*n*(x+y+z)+2*a)=0.45{x^2+y^2+z^2<25}
+sin(n*x+a)*cos(n*y-a)+sin(n*y+a)*cos(n*z-a)+sin(n*z+a)*cos(n*x-a)+0.2*sin(3*n*(x+y+z)+2*a)=-0.45{x^2+y^2+z^2<25}

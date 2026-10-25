@@ -169,3 +169,15 @@ kernel void vmEvalPoints(uint gid [[thread_position_in_grid]],
     if (gid >= count) return;
     out[gid] = gvm::run(code, codeLength, consts, points[gid].x, points[gid].y);
 }
+
+// Test hook (tests/test_vm.cpp): evaluate a program at (x, y, t) points; t carries z in 3D.
+kernel void vmEvalPoints3(uint gid [[thread_position_in_grid]],
+                          device const uint* code [[buffer(0)]],
+                          device const float* consts [[buffer(1)]],
+                          constant uint& codeLength [[buffer(2)]],
+                          device const float4* points [[buffer(3)]],
+                          device float* out [[buffer(4)]],
+                          constant uint& count [[buffer(5)]]) {
+    if (gid >= count) return;
+    out[gid] = gvm::run(code, codeLength, consts, points[gid].x, points[gid].y, points[gid].z);
+}

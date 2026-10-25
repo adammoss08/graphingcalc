@@ -117,3 +117,84 @@ TEST(gpu_vm_matches_cpu_vm) {
         }
     }
 }
+
+namespace {
+
+// Runs `p` on the GPU VM at (x, y, z) points (z in the t slot: 3D implicit surfaces).
+std::vector<float> gpuEval3(const Program& p, const std::vector<simd_float4>& pts) {
+    static MTL::Device* dev = MTL::CreateSystemDefaultDevice();
+    static MTL::Library* lib = [] {
+        NS::Error* err = nullptr;
+        return dev->newLibrary(NS::String::string(METALLIB_PATH, NS::UTF8StringEncoding), &err);
+    }();
+    static MTL::ComputePipelineState* pipe = [] {
+        NS::Error* err = nullptr;
+        auto* fn = lib->newFunction(NS::String::string("vmEvalPoints3", NS::UTF8StringEncoding));
+        return dev->newComputePipelineState(fn, &err);
+    }();
+    static MTL::CommandQueue* q = dev->newCommandQueue();
+    std::vector<float> consts;
+    for (double c : p.consts) consts.push_back(float(c));
+    if (consts.empty()) consts.push_back(0);
+    uint32_t len = uint32_t(p.code.size()), count = uint32_t(pts.size());
+    auto* codeB = dev->newBuffer(p.code.data(), std::max<size_t>(4, p.code.size() * 4), MTL::ResourceStorageModeShared);
+    auto* constB = dev->newBuffer(consts.data(), consts.size() * 4, MTL::ResourceStorageModeShared);
+    auto* ptB = dev->newBuffer(pts.data(), pts.size() * sizeof(simd_float4), MTL::ResourceStorageModeShared);
+    auto* outB = dev->newBuffer(pts.size() * 4, MTL::ResourceStorageModeShared);
+    auto* cb = q->commandBuffer();
+    auto* ce = cb->computeCommandEncoder();
+    ce->setComputePipelineState(pipe);
+    ce->setBuffer(codeB, 0, 0);
+    ce->setBuffer(constB, 0, 1);
+    ce->setBytes(&len, 4, 2);
+    ce->setBuffer(ptB, 0, 3);
+    ce->setBuffer(outB, 0, 4);
+    ce->setBytes(&count, 4, 5);
+    ce->dispatchThreads(MTL::Size(count, 1, 1), MTL::Size(64, 1, 1));
+    ce->endEncoding();
+    cb->commit();
+    cb->waitUntilCompleted();
+    std::vector<float> out(static_cast<float*>(outB->contents()), static_cast<float*>(outB->contents()) + count);
+    codeB->release(); constB->release(); ptB->release(); outB->release();
+    return out;
+}
+
+} // namespace
+
+// 3D implicit programs (z, cylindrical r/θ, spherical ρ/φ, restrictions) agree between VMs.
+TEST(gpu_vm_matches_cpu_vm_3d) {
+    const char* cases[] = {
+        "x^{2}+y^{2}+z^{2}=9", "\\sin\\left(18x\\right)\\cos\\left(18y\\right)+\\sin\\left(18z\\right)=0",
+        "\\rho=3", "\\rho=2+\\sin\\left(3\\theta\\right)\\sin\\left(4\\phi\\right)", "r=2+z", "y=x^{2}+z",
+        "x^{2}+y^{2}+z^{2}=25\\left\\{z>0\\right\\}", "\\sqrt{z-x^{2}}=y", "z=\\frac{1}{x}+y",
+        "x^{2}+y^{2}+z^{2}=1\\left\\{x^{2}+y^{2}+z^{2}<25\\right\\}",
+    };
+    std::vector<simd_float4> pts;
+    for (int i = 0; i < 96; ++i)
+        pts.push_back(simd_make_float4(-4.7f + i * 0.097f, -3.1f + (i % 13) * 0.53f, -4.1f + (i % 7) * 1.21f, 0));
+    for (const char* c : cases) {
+        MathTree t;
+        t.insertLatex(c);
+        AnalyzerSettings s;
+        s.threeD = true;
+        auto r = analyzeGraph({{&t}}, s);
+        if (r[0].pieces.empty() || r[0].kind == RowKind::Error) {
+            test::fail(__FILE__, __LINE__, std::string("no 3D program for ") + c + ": " + r[0].error);
+            continue;
+        }
+        const Program& p = r[0].pieces[0].f;
+        std::vector<float> g = gpuEval3(p, pts);
+        for (size_t i = 0; i < pts.size(); ++i) {
+            double cpu = evaluate(p, pts[i].x, pts[i].y, pts[i].z), gpu = g[i];
+            bool ok = (std::isnan(cpu) && std::isnan(gpu)) ||
+                      (std::isinf(cpu) && std::isinf(gpu) && (cpu > 0) == (gpu > 0)) ||
+                      std::fabs(cpu - gpu) <= 2e-4 * (1 + std::fabs(cpu)) || std::fabs(cpu) > 1e5;
+            if (!ok) {
+                char buf[240];
+                std::snprintf(buf, sizeof buf, "%s at (%g,%g,%g): cpu %.9g gpu %.9g", c, pts[i].x, pts[i].y, pts[i].z, cpu, gpu);
+                test::fail(__FILE__, __LINE__, buf);
+                break;
+            }
+        }
+    }
+}

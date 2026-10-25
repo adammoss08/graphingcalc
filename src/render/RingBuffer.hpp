@@ -26,6 +26,11 @@ public:
     }
     // Call from the command buffer's completion handler.
     void end() { dispatch_semaphore_signal(m_sem); }
+    // Blocks until every frame in flight has completed (its handler has run to end()).
+    void drain() {
+        for (int i = 0; i < kFramesInFlight; ++i) dispatch_semaphore_wait(m_sem, DISPATCH_TIME_FOREVER);
+        for (int i = 0; i < kFramesInFlight; ++i) dispatch_semaphore_signal(m_sem);
+    }
     int slot() const { return m_slot; }
 
 private:

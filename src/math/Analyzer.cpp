@@ -46,7 +46,13 @@ void mixDouble(uint64_t& h, double d) { uint64_t u; std::memcpy(&u, &d, 8); mix(
 class RowCompiler {
 public:
     RowCompiler(const Definitions& defs, const AnalyzerSettings& s) : m_resolver(defs, s.degrees) {
-        if (s.threeD) m_resolver.setPassThrough({"z"});  // z is a coordinate in 3D mode
+        if (s.threeD) {
+            // 3D mode: z is a coordinate; u and v are parametric-surface parameters unless defined.
+            std::set<std::string> pass{"z"};
+            for (const char* p : {"u", "v"})
+                if (!defs.vars.count(p)) pass.insert(p);
+            m_resolver.setPassThrough(std::move(pass));
+        }
     }
 
     int resolve(const ParsedRow& row, int root) { return m_resolver.resolve(row.pool, root, m_pool); }
@@ -86,6 +92,9 @@ const ParamMap kParamsY = {{"y", OP_Y}};
 const ParamMap kParamsT = {{"t", OP_T}};
 const ParamMap kParamsTheta = {{kTheta, OP_T}};
 const ParamMap kParamsXY = {{"x", OP_X}, {"y", OP_Y}, {"r", OP_R}, {kTheta, OP_THETA}};
+// 3D: z rides in the t slot (both VMs take x, y, t); r and θ are cylindrical.
+const ParamMap kParamsXYZ = {{"x", OP_X}, {"y", OP_Y}, {"z", OP_T}, {"r", OP_R}, {kTheta, OP_THETA}};
+const ParamMap kParamsUV = {{"u", OP_X}, {"v", OP_Y}};
 
 void setMissingError(RowAnalysis& out, const std::set<std::string>& missing) {
     out.kind = RowKind::Error;
@@ -145,24 +154,45 @@ void analyzeGraphRow(const ParsedRow& row, const Definitions& defs, const Analyz
         bool allTuples = true;
         for (int it : items) allTuples &= P[it].op == AstOp::Tuple;
         if (allTuples && !items.empty() && settings.threeD) {
-            // 3D: (a, b, c) points and (f(t), g(t), h(t)) space curves; (a, b) sits at z = 0.
-            bool param = false;
-            for (int it : items) param |= rc.uses(it, "t");
+            // 3D: (a, b, c) points, (f(t), g(t), h(t)) space curves and (f(u,v), g(u,v), h(u,v))
+            // parametric surfaces; (a, b) sits at z = 0.
+            bool param = false, surface = false;
+            for (int it : items) {
+                param |= rc.uses(it, "t");
+                surface |= rc.uses(it, "u") || rc.uses(it, "v");
+            }
+            if (param && surface) throw ParseError("Use t for a curve or u and v for a surface, not both");
+            if (surface) {
+                for (int it : items) rc.checkVars(it, {"u", "v"});
+                if (failIfMissing()) return;
+                out.kind = RowKind::Graph;
+                out.graph = GraphKind::ParametricSurface;
+                for (int it : items) {
+                    const std::vector<int> kids = P[it].kids;  // copy: compiling grows P (a reference would dangle)
+                    if (kids.size() != 3) throw ParseError("Parametric surfaces need 3 coordinates");
+                    GraphPiece pc;
+                    pc.f = rc.program(kids[0], kParamsUV);
+                    pc.g = rc.program(kids[1], kParamsUV);
+                    pc.h = rc.program(kids[2], kParamsUV);
+                    out.pieces.push_back(std::move(pc));
+                }
+                return;
+            }
             for (int it : items) rc.checkVars(it, {"t"});
             if (failIfMissing()) return;
             out.kind = RowKind::Graph;
             for (int it : items) {
-                const AstNode& tup = P[it];
-                if (tup.kids.size() < 2 || tup.kids.size() > 3) throw ParseError("Points need 2 or 3 coordinates");
+                const std::vector<int> kids = P[it].kids;  // copy: compiling grows P (a reference would dangle)
+                if (kids.size() < 2 || kids.size() > 3) throw ParseError("Points need 2 or 3 coordinates");
                 GraphPiece pc;
-                int zk = tup.kids.size() == 3 ? tup.kids[2] : P.num(0);
+                int zk = kids.size() == 3 ? kids[2] : P.num(0);
                 if (param) {
-                    pc.f = rc.program(tup.kids[0], kParamsT);
-                    pc.g = rc.program(tup.kids[1], kParamsT);
+                    pc.f = rc.program(kids[0], kParamsT);
+                    pc.g = rc.program(kids[1], kParamsT);
                     pc.h = rc.program(zk, kParamsT);
                 } else {
-                    pc.px = evalConstant(P, tup.kids[0]);
-                    pc.py = evalConstant(P, tup.kids[1]);
+                    pc.px = evalConstant(P, kids[0]);
+                    pc.py = evalConstant(P, kids[1]);
                     pc.pz = evalConstant(P, zk);
                 }
                 out.pieces.push_back(std::move(pc));
@@ -177,15 +207,15 @@ void analyzeGraphRow(const ParsedRow& row, const Definitions& defs, const Analyz
             if (failIfMissing()) return;
             out.kind = RowKind::Graph;
             for (int it : items) {
-                const AstNode& tup = P[it];
-                if (tup.kids.size() != 2) throw ParseError("Only 2D points can be graphed");
+                const std::vector<int> kids = P[it].kids;  // copy: compiling grows P (a reference would dangle)
+                if (kids.size() != 2) throw ParseError("Only 2D points can be graphed");
                 GraphPiece pc;
                 if (param) {
-                    pc.f = rc.program(tup.kids[0], kParamsT);
-                    pc.g = rc.program(tup.kids[1], kParamsT);
+                    pc.f = rc.program(kids[0], kParamsT);
+                    pc.g = rc.program(kids[1], kParamsT);
                 } else {
-                    pc.px = evalConstant(P, tup.kids[0]);
-                    pc.py = evalConstant(P, tup.kids[1]);
+                    pc.px = evalConstant(P, kids[0]);
+                    pc.py = evalConstant(P, kids[1]);
                 }
                 out.pieces.push_back(std::move(pc));
             }
@@ -323,10 +353,32 @@ void analyzeGraphRow(const ParsedRow& row, const Definitions& defs, const Analyz
                 out.pieces.push_back(std::move(pc));
             }
         };
-        if (lhsVar && lname == "z" && !rc.uses(rhs, "z")) { surface(rhs); return; }
-        if (rhsVar && rname == "z" && !rc.uses(lhs, "z")) { surface(lhs); return; }
-        if (rc.uses(lhs, "z") || rc.uses(rhs, "z"))
-            throw ParseError("Implicit 3D surfaces aren't supported yet: write z = f(x, y)");
+        // z = f(x, y) (or z < f(x, y): its boundary, drawn translucent) is a grid surface.
+        if (lhsVar && lname == "z" && !rc.uses(rhs, "z")) { surface(rhs); out.rel = rel; return; }
+        if (rhsVar && rname == "z" && !rc.uses(lhs, "z")) {
+            surface(lhs);
+            out.rel = rel == Cmp::Lt ? Cmp::Gt : rel == Cmp::Gt ? Cmp::Lt : rel == Cmp::Le ? Cmp::Ge
+                    : rel == Cmp::Ge ? Cmp::Le : rel;
+            return;
+        }
+        // Everything else is an implicit surface F(x, y, z) = 0 (spheres, x = f(y, z), y = x² ...),
+        // meshed on the GPU. Inequalities draw their boundary F = 0, translucent.
+        int F = P.binary(AstOp::Sub, lhs, rhs);
+        rc.checkVars(F, {"x", "y", "z", "r", kTheta.c_str()});
+        if (failIfMissing()) return;
+        out.graph = GraphKind::Implicit3D;
+        for (int b : rc.broadcast(F)) {
+            GraphPiece pc;
+            pc.f = rc.program(b, kParamsXYZ);
+            if (pc.f.isConstant()) {  // "1 = 2": nothing to draw
+                out.kind = RowKind::None;
+                out.graph = GraphKind::None;
+                out.pieces.clear();
+                return;
+            }
+            out.pieces.push_back(std::move(pc));
+        }
+        return;
     }
     if (lhsVar && lname == "y" && explicitIn("y", "x", rhs, false)) return;
     if (rhsVar && rname == "y" && explicitIn("y", "x", lhs, true)) return;
@@ -539,7 +591,8 @@ std::vector<RowAnalysis> analyzeGraph(const std::vector<RowInput>& rows, const A
                 pr.params = params;
                 pr.defRoot = st.exprs[1];
             }
-        } else if (lhs.op == AstOp::Var && !isCoordinateName(lhs.name) && !(settings.threeD && lhs.name == "z")) {
+        } else if (lhs.op == AstOp::Var && !isCoordinateName(lhs.name) &&
+                   !(settings.threeD && (lhs.name == "z" || lhs.name == "\xCF\x81" /* ρ */ || lhs.name == "\xCF\x86" /* φ */))) {
             pr.def = ParsedRow::Def::Var;
             pr.name = lhs.name;
             pr.defRoot = st.exprs[1];
@@ -561,6 +614,18 @@ std::vector<RowAnalysis> analyzeGraph(const std::vector<RowInput>& rows, const A
         }
         if (pr.def == ParsedRow::Def::Var) defs.vars[pr.name] = {&pr.pool, pr.defRoot};
         else defs.fns[pr.name] = {&pr.pool, pr.defRoot, pr.params};
+    }
+
+    // 3D spherical coordinates: ρ = |(x, y, z)| and φ = angle from +z, unless the graph defines them.
+    AstPool spherical;
+    if (settings.threeD) {
+        const std::string rho = "\xCF\x81", phi = "\xCF\x86";  // ρ φ
+        auto sq = [&](const char* v) { return spherical.binary(AstOp::Pow, spherical.var(v), spherical.num(2)); };
+        int r2 = spherical.binary(AstOp::Add, spherical.binary(AstOp::Add, sq("x"), sq("y")), sq("z"));
+        int rhoRoot = spherical.call("sqrt", {r2});
+        int phiRoot = spherical.call("arccos", {spherical.binary(AstOp::Div, spherical.var("z"), spherical.call("sqrt", {r2}))});
+        if (!defs.vars.count(rho)) defs.vars[rho] = {&spherical, rhoRoot};
+        if (!defs.vars.count(phi)) defs.vars[phi] = {&spherical, phiRoot};
     }
 
     // Slider variables (defined as a plain number) can be driven by dragging points.
@@ -646,7 +711,7 @@ std::vector<RowAnalysis> analyzeGraph(const std::vector<RowInput>& rows, const A
             ra.kind = RowKind::Error;
             ra.error = e.what();
         }
-        if (ra.graph == GraphKind::Parametric || ra.graph == GraphKind::Polar) {
+        if (ra.graph == GraphKind::Parametric || ra.graph == GraphKind::Polar || ra.graph == GraphKind::Parametric3D) {
             auto lo = evalField(rows[i].domainMin, defs, settings, fnNames);
             auto hi = evalField(rows[i].domainMax, defs, settings, fnNames);
             if (lo.size() == 1 && std::isfinite(lo[0])) ra.tMin = lo[0];

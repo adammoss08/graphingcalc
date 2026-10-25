@@ -35,6 +35,8 @@ struct Options {
     double vx0 = -10, vx1 = 10, vy0 = -10, vy1 = 10;
     bool launchBench = false, check = false, perfHud = false, keypad = false, threeD = false;
     int appearance = -1;   // --light / --dark override the saved View > Appearance for this run
+    bool camera = false;   // --camera azimuth,elevation,halfSize (3D view, radians)
+    double camAz = 0, camEl = 0, camL = 10;
     std::vector<std::string> images;
     int styleMenuRow = 0;
     std::vector<std::pair<float, float>> clicks;   // simulated clicks (screenshots / parity checks)
@@ -58,6 +60,7 @@ Options parseArgs(int argc, const char** argv) {
         else if (a == "--keypad") o.keypad = true;
         else if (a == "--3d") o.threeD = true;
         else if (a == "--dark") o.appearance = 2;
+        else if (a == "--camera") o.camera = std::sscanf(next().c_str(), "%lf,%lf,%lf", &o.camAz, &o.camEl, &o.camL) == 3;
         else if (a == "--light") o.appearance = 1;
         else if (a == "--verbose") calc::log::verbose() = true;
         else if (a == "--image") o.images.push_back(next());
@@ -112,6 +115,7 @@ void applyOptions(App& app, const Options& o) {
     if (o.keypad) app.toggleKeypad();
     if (o.threeD && !app.is3D()) app.toggle3D();
     if (o.appearance > 0) app.setDarkMode(o.appearance == 2);
+    if (o.camera && o.camL > 0) app.setCamera3D(o.camAz, o.camEl, o.camL);
     if (o.view) app.setView(o.vx0, o.vx1, o.vy0, o.vy1);
     if (o.select > 0) app.focusRow(o.select - 1);
     if (o.styleMenuRow > 0) app.openStyleMenu(o.styleMenuRow - 1, -1);

@@ -177,6 +177,11 @@ inline constexpr float ImplicitCellPts = 2.5f;         // GPU field grid spacing
 // ---- 3D mode (Desmos 3D look) ----
 inline constexpr unsigned Surface3DGridN = 192;        // surface grid points per side (GPU-evaluated)
 inline constexpr int Max3DSurfaces = 64;
+inline constexpr unsigned Implicit3DGridN = 128;       // implicit surfaces: field grid points per side
+                                                        // over where F is defined (surface nets)
+inline constexpr int Implicit3DProbeN = 24;            // CPU pre-pass grid that finds that region
+inline constexpr float Inequality3DOpacity = 0.4f;     // 3D inequalities: translucent boundary
+inline constexpr float ParamSurfaceLines = 16;         // u/v lines drawn on parametric surfaces
 inline constexpr float Surface3DOpacity = 1.0f;
 inline constexpr float Floor3DGridOpacity = 0.12f;
 inline constexpr float Floor3DGridWidth = 1.0f;

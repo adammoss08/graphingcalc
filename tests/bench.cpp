@@ -13,6 +13,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstring>
+#include <fstream>
 #include <string>
 #include <thread>
 #include <vector>
@@ -243,6 +244,43 @@ int main(int argc, char** argv) {
         results.push_back({"3d_surface_eval_gpu_ms (p50)", median(gpuEval), 8.0, "ms"});
         results.push_back({"3d_frame_gpu_ms (p50)", median(gpu), 6.0, "ms"});
         results.push_back({"3d_orbit_cpu_ms (p50)", median(cpu), 4.0, "ms"});
+        tex->release();
+    }
+
+    // 6) 3D implicit surfaces: the triple-gyroid fixture (3 surfaces, n = 18, ~4M triangles).
+    //    Rebuild = field + surface nets for all three (what a slider drag costs per frame);
+    //    orbit = drawing the cached mesh.
+    {
+        App app;
+        std::string err;
+        app.init(dev, METALLIB_PATH, err);
+        app.setSize(W, H, 2);
+        app.toggle3D();
+        std::ifstream f(FIXTURES_DIR "/gyroid.txt");
+        std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+        app.pasteText(text);
+        app.list().blur();
+        MTL::Texture* tex = app.renderer().makeOffscreenTarget(int(W * 2), int(H * 2));
+        for (int i = 0; i < 6; ++i) app.render(tex, nullptr, true);   // grow the mesh buffers
+        std::vector<double> rebuild, orbit;
+        for (int i = 0; i < 6; ++i) {
+            app.setCamera3D(-0.95, 0.42, i % 2 ? 10 : 10.25);   // a new box re-meshes everything
+            app.render(tex, nullptr, true);
+            rebuild.push_back(app.renderer().stats().gpuMs);
+        }
+        float x = 900, y = 450;
+        app.mouseDown(x, y, 1, {});
+        for (int i = 0; i < 20; ++i) {
+            x += 6;
+            app.mouseDragged(x, y);
+            app.render(tex, nullptr, true);
+            orbit.push_back(app.renderer().stats().gpuMs);
+        }
+        app.mouseUp(x, y);
+        results.push_back({"3d_implicit_rebuild_gpu_ms (p50)", median(rebuild), 80.0, "ms"});
+        // ~4M small triangles: raster-bound; must stay inside one 60 Hz frame with headroom.
+        results.push_back({"3d_implicit_orbit_gpu_ms (p50)", median(orbit), 12.0, "ms"});
+        if (app.renderer().stats().gpuErrors) results.push_back({"3d_gpu_errors", double(app.renderer().stats().gpuErrors), 0, ""});
         tex->release();
     }
 

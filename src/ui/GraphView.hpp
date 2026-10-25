@@ -62,7 +62,8 @@ public:
     size_t samplesInFlight() const { return m_inflight.size(); }
 
     void setArea(const Rect& r);
-    void resetView();
+    void resetView();          // the current mode's view (2D viewport or 3D camera)
+    void resetAllViews();      // both (new graph / file load)
     bool viewIsDefault() const;
     void zoomBy(double factor);
 
@@ -129,8 +130,15 @@ private:
         std::vector<simd_float3> pts;   // NaN x breaks the curve
     };
     std::unordered_map<uint64_t, Curve3D> m_cache3d;
+    // Implicit surfaces: grid bounds from a coarse CPU probe (where F is defined / changes sign).
+    struct ImplicitBox3D {
+        uint64_t hash = 0;
+        bool any = false;        // F defined somewhere in the box
+        simd_float3 lo, hi;
+    };
+    std::unordered_map<uint64_t, ImplicitBox3D> m_box3d;
     void buildFrame3D(const std::vector<GraphItem>& items, int selected, GraphFrame& out);
-    void drawOver3D(Batch2D& b) const;
+    void drawOver3D(Batch2D& b, const std::vector<GraphItem>& items) const;
     double gridStep3D() const;
 
     Rect buttonRect(Button b) const;

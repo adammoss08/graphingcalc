@@ -77,6 +77,12 @@ SavedGraph App::snapshot() const {
     g.minorGrid = m_graph.settings.minorGrid;
     g.axisNumbers = m_graph.settings.axisNumbers;
     g.threeD = m_graph.settings.threeD;
+    if (!m_graph.cam.isDefault()) {
+        g.hasCamera3D = true;
+        g.camAzimuth = m_graph.cam.azimuth;
+        g.camElevation = m_graph.cam.elevation;
+        g.camHalfSize = m_graph.cam.halfSize;
+    }
     return g;
 }
 
@@ -197,7 +203,7 @@ void App::newGraph() {
     m_list.focus = {};
     m_list.resetColorCycle();
     m_list.addRow(0, "", true);
-    m_graph.resetView();
+    m_graph.resetAllViews();
     m_path.clear();
     m_modified = false;
     m_needsAnalysis = true;
@@ -220,8 +226,11 @@ bool App::loadFile(const std::string& path, std::string& error) {
     g.focused = -1;
     restore(g);
     if (m_list.rows.empty()) m_list.addRow(0, "", false);
+    m_graph.resetAllViews();
     if (g.hasViewport) setView(g.xmin, g.xmax, g.ymin, g.ymax);
-    else m_graph.resetView();
+    if (g.hasCamera3D) {
+        setCamera3D(g.camAzimuth, g.camElevation, g.camHalfSize);
+    }
     m_path = path;
     m_modified = false;
     return true;

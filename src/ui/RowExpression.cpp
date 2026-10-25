@@ -26,7 +26,8 @@ bool rowShowsValue(const ExpressionRow& r) {
 }
 
 bool hasDomain(const ExpressionRow& r) {
-    return r.analysis.graph == GraphKind::Parametric || r.analysis.graph == GraphKind::Polar;
+    return r.analysis.graph == GraphKind::Parametric || r.analysis.graph == GraphKind::Polar ||
+           r.analysis.graph == GraphKind::Parametric3D;
 }
 
 std::string formatSliderValue(double v, double range) {

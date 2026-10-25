@@ -55,6 +55,10 @@ App::~App() = default;
 bool App::init(MTL::Device* device, const std::string& metallibPath, std::string& error) {
     m_renderer = std::make_unique<Renderer>();
     if (!m_renderer->init(device, metallibPath, error)) return false;
+    m_renderer->onNeedsFrame = [this] {   // e.g. a 3D mesh outgrew its buffers: rebuild it larger
+        m_dirty = true;
+        if (onRedrawNeeded) onRedrawNeeded();
+    };
     m_ui = std::make_unique<Batch2D>(m_renderer->atlas());
     m_frame = std::make_unique<GraphFrame>();
     m_list.atlas = &m_renderer->atlas();
@@ -67,8 +71,12 @@ bool App::init(MTL::Device* device, const std::string& metallibPath, std::string
             m_styleMenu.show(row, col, anchor, true, false, true, true);
         } else if (r.type == RowType::Expression) {
             const RowAnalysis& an = r.analysis;
-            bool points = an.graph == GraphKind::Point;
-            m_styleMenu.show(row, -1, anchor, !points, an.rel != Cmp::Eq, points, false, points);
+            bool points = an.graph == GraphKind::Point || an.graph == GraphKind::Point3D;
+            // 3D surfaces only take a colour (no line or fill controls apply).
+            bool surface3d = an.graph == GraphKind::Surface || an.graph == GraphKind::Implicit3D ||
+                             an.graph == GraphKind::ParametricSurface;
+            if (surface3d) m_styleMenu.show(row, -1, anchor, false, false, false, false);
+            else m_styleMenu.show(row, -1, anchor, !points, an.rel != Cmp::Eq, points, false, points);
         } else {
             return;
         }
@@ -826,6 +834,8 @@ bool App::screenshot(const std::string& path) {
     render(tex, nullptr, true);
     m_dirty = true;
     render(tex, nullptr, true);
+    // A 3D mesh that outgrew its buffers is rebuilt larger by the next frame.
+    for (int i = 0; i < 8 && m_renderer->wantsAnotherFrame(); ++i) render(tex, nullptr, true);
     bool ok = Renderer::savePng(tex, path);
     tex->release();
     return ok;

@@ -23,6 +23,7 @@ scripts/run.sh              # build + launch with diagnostics (log in build/logs
                             # CALC_VALIDATE=1 adds Metal API/shader validation, CALC_VERBOSE=0 quiets)
 scripts/screenshot.sh out.png [latex...]   # launch with expressions, capture window PNG, quit
 scripts/bench.sh [--check]  # perf benchmarks vs the targets below; --check exits 1 on a miss
+scripts/sanitize.sh         # before a release: tests under ASan, UBSan, Metal API+shader validation
 ```
 `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` is required for the `metal` compiler;
 the scripts set it. A Stop hook (`.claude/hooks/check.sh`) runs build + tests + `bench.sh --check`
@@ -75,7 +76,7 @@ Where the speed comes from, in priority order:
 ```
 src/app      Platform.mm  NSApp/NSWindow/CAMetalLayer view, events, menus, clipboard, file/image panels,
                           CLI flags (--expr --open --image --screenshot --size --select --hover --click
-                          --view --style-menu --keypad --3d --dark --light --verbose --launch-bench --perf-hud). Device + App::init
+                          --view --style-menu --keypad --3d --camera --dark --light --verbose --launch-bench --perf-hud). Device + App::init
                           run on a background thread during AppKit startup (launch target).
              App          owns everything; routes events (popovers > keypad > top bar > list > graph);
                           analysis (tables become synthetic rows), graph items, undo, frame building
@@ -96,9 +97,10 @@ src/ui       Theme.hpp    ALL colours, sizes, fonts, timings (design tokens). No
              Keypad       on-screen keypad (main / functions / ABC pages)
              GraphView    grid/axes/labels, curve caches + parallel sampling (GCD), POIs, trace (incl.
                           implicit curves), pan/zoom, zoom buttons, settings popover; takes GraphItems
-               GraphView3D   3D mode: Scene3D (GPU surfaces, space curves and 2D curves on z = 0
-                             sampled once in world units, points, box/floor grid/axes as 3D lines),
-                             projected axis letters + ticks; drag orbits, zoom changes the box size L
+               GraphView3D   3D mode: Scene3D (grid surfaces, parametric surfaces, implicit surfaces
+                             with grid bounds from a 24³ CPU probe, space curves, 2D curves on z = 0,
+                             points + labels, box/floor grid/axes as 3D lines); drag orbits, zoom
+                             changes the box size L; camera saved in files ("camera3D")
 src/math     MathTree     editable structured math + all MathQuill editing commands
              Latex        MathTree <-> LaTeX (copy/paste, save files)
              Parser       MathTree -> Ast (implicit multiplication, function application, d/dx, f',
@@ -107,7 +109,10 @@ src/math     MathTree     editable structured math + all MathQuill editing comma
                           lists -> fold -> stack bytecode (Bytecode.hpp, shared with shaders/vm.h)
              Derivative   symbolic differentiation (chain rule for every builtin, Leibniz for ∫)
              Analyzer     whole-graph: definitions, classification, regressions, side fields, row hash;
-                          in 3D (`AnalyzerSettings.threeD`) z is a coordinate: Surface, Parametric3D, Point3D
+                          in 3D (`AnalyzerSettings.threeD`) z is a coordinate (compiled to OP_T): Surface
+                          (z = f(x,y), inequalities translucent), Implicit3D (any other relation:
+                          spheres, y = x², planes), ParametricSurface (u, v), Parametric3D (t),
+                          Point3D; ρ, φ are spherical, r, θ cylindrical
              Regression   least squares (CPU double; MPS Gram + double refinement for large n·k) and
                           Levenberg–Marquardt for nonlinear models
              Vm/Builtins  CPU double interpreter (scalar + batched; loops for ∑ ∏ ∫)
@@ -116,9 +121,12 @@ src/graph    Viewport, Camera3D (orbit camera, box [-L, L]^3), Grid (Desmos 1-2-
 src/render   Renderer     one command buffer per frame: implicit compute (field -> edge refine ->
                           marching squares -> indirect args) then a single render pass; images.
                           Pass has a memoryless Depth32Float attachment (RenderFormats.hpp)
-             Renderer3D   3D mode: surfaceGrid compute (192² VM evaluations per surface, skipped while
-                          programs + L are unchanged, so orbiting only redraws), indexed lit surfaces,
-                          depth-tested capsule lines/points, all scissored to the graph area
+             Renderer3D   3D mode: surfaceGrid compute (192² VM evaluations per explicit/parametric
+                          surface); implicit surfaces: field (128³ over the probe bounds) -> surface
+                          nets (cells -> vertices, edges -> quads) into shared buffers that grow on
+                          overflow (completion handler -> onNeedsFrame); all cached while programs
+                          + L are unchanged, so orbiting only redraws. Opaque meshes skip blend and
+                          discard (hidden-surface removal); translucent pass after lines
              Batch2D      every UI primitive in one instance buffer (SDF rects/lines/glyphs/images)
              TextAtlas    CoreText rasteriser + R8 atlas;  RingBuffer: triple-buffered shared buffers
              ShaderTypes  structs shared with MSL
@@ -126,7 +134,8 @@ src/gpu      MpsBridge.mm the only MPS code (MPSMatrixMultiplication for regress
 shaders/     ui.metal, curve.metal (tile-memory "no double blend" curves, dashed/dotted, fills),
              implicit.metal (+ vmEvalPoints test hook), vm.h (GPU float VM incl. loop opcodes),
              surface.metal (3D surfaces + lines)
-tests/       test_math, test_vm (GPU vs CPU parity), test_regression_mps, test_app, test_app3d, test_rows
+tests/       test_math, test_vm (GPU vs CPU parity, 2D and 3D), test_regression_mps, test_app, test_app3d,
+             test_3d (classification, mesh accuracy, fixtures/gyroid.txt end to end), test_rows
              (event-level row/editor behaviour), fixtures/showcase.json, bench.cpp (perf gate)
 ```
 Precision: the CPU evaluates in `double`, the GPU in `float` relative to the viewport centre.
@@ -139,9 +148,10 @@ are CPU-only Desmos semantics.
 Image drag handles on the graph; draggable points with expression coordinates (only plain slider
 variables drag today); actions/tickers; recursion; complex numbers; geometry and 3D calculators;
 accessibility (audio trace). Tables: column resize and drag-select.
-3D mode: implicit surfaces (x²+y²+z²=9, needs marching cubes), trace/POIs/point dragging in 3D,
-surfaces of x or y (x = f(y, z)), translucent-surface sorting, camera not saved in files, 3D
-inequalities. The 2D/3D button and View ▸ 3D Mode (⌘3) switch modes; `graph.threeDMode` is saved.
+3D mode: trace/hover/POIs and point dragging in 3D, u/v domain fields for parametric surfaces,
+sorting of overlapping translucent surfaces, adaptive mesh resolution (implicit grids are a fixed
+128³ over their bounds; zoom in for detail), vectors. The 2D/3D button and View ▸ 3D Mode (⌘3)
+switch modes; `graph.threeDMode` and `graph.camera3D` are saved.
 
 Diagnostics: `src/Log.hpp` (`log::error` always, `log::info` when verbose). GPU command-buffer
 failures, row errors and slow frames are logged; never swallow an error silently.

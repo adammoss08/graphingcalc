@@ -1,6 +1,7 @@
 #pragma once
 // Expression AST stored in a flat pool (indices, no pointers) so it is cheap to copy and substitute.
 #include <cstdint>
+#include <deque>
 #include <string>
 #include <vector>
 
@@ -40,7 +41,9 @@ struct AstNode {
 };
 
 struct AstPool {
-    std::vector<AstNode> nodes;
+    // A deque, not a vector: appending never moves existing nodes, so a `const AstNode&` taken
+    // before building more nodes (compiling, folding, P.num(...)) stays valid.
+    std::deque<AstNode> nodes;
 
     int add(AstNode n) { nodes.push_back(std::move(n)); return int(nodes.size()) - 1; }
     int num(double v) { AstNode n; n.op = AstOp::Num; n.num = v; return add(std::move(n)); }

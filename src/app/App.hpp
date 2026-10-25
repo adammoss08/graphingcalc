@@ -31,7 +31,7 @@ public:
     void warmUp(float scale);
 
     // Rendering
-    bool needsRedraw() const { return m_dirty || animating(); }
+    bool needsRedraw() const { return m_dirty || animating() || m_renderer->wantsAnotherFrame(); }
     void setNeedsRedraw() { m_dirty = true; }
     bool animating() const { return m_list.animating(); }
     void render(MTL::Texture* target, CA::MetalDrawable* drawable, bool wait = false);
@@ -75,6 +75,12 @@ public:
     void toggle3D() { m_graph.settings.threeD = !m_graph.settings.threeD; m_needsAnalysis = true; m_dirty = true; }
     bool is3D() const { return m_graph.settings.threeD; }
     void setDarkMode(bool on) { theme::setDarkMode(on); m_dirty = true; }
+    void setCamera3D(double azimuth, double elevation, double halfSize) {
+        Camera3D& c = m_graph.cam;
+        c.orbit(azimuth - c.azimuth, elevation - c.elevation);
+        c.halfSize = halfSize;
+        m_dirty = true;
+    }
     void openStyleMenu(int row, int col);  // for tests / CLI
 
     std::function<void()> onRequestImage;  // platform: show an open panel, then call addImage()

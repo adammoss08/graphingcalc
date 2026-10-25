@@ -37,6 +37,8 @@ struct SavedGraph {
     double xmin = -10, xmax = 10, ymin = -10, ymax = 10;
     bool degrees = false, showGrid = true, minorGrid = true, axisNumbers = true;
     bool threeD = false;  // "threeDMode": our 3D mode (Desmos 3D is a separate calculator)
+    bool hasCamera3D = false;           // "camera3D": orbit camera (azimuth, elevation, box half-size)
+    double camAzimuth = 0, camElevation = 0, camHalfSize = 10;
     int focused = -1;   // undo snapshots only
 };
 

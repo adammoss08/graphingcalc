@@ -154,7 +154,8 @@ inline float binaryOp(uint op, float a, float b) {
     }
 }
 
-inline float run(device const uint* code, uint len, device const float* consts, float x, float y) {
+// t is the third input: the curve parameter, or z for 3D implicit surfaces (z compiles to OP_T).
+inline float run(device const uint* code, uint len, device const float* consts, float x, float y, float t = 0) {
     float stack[kBcMaxStack];
     float loopI[kBcMaxLoops], loopHi[kBcMaxLoops], loopAcc[kBcMaxLoops], loopA[kBcMaxLoops], loopB[kBcMaxLoops];
     int loopK[kBcMaxLoops];
@@ -166,7 +167,7 @@ inline float run(device const uint* code, uint len, device const float* consts, 
         case OP_CONST: stack[sp++] = consts[bcArgOf(ins)]; break;
         case OP_X: stack[sp++] = x; break;
         case OP_Y: stack[sp++] = y; break;
-        case OP_T: stack[sp++] = 0; break;
+        case OP_T: stack[sp++] = t; break;
         case OP_R: stack[sp++] = precise::sqrt(x * x + y * y); break;
         case OP_THETA: stack[sp++] = precise::atan2(y, x); break;
         case OP_NAN: case OP_PARAM: stack[sp++] = kNaN; break;  // OP_PARAM is CPU-only

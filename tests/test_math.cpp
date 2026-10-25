@@ -442,8 +442,8 @@ TEST(three_d_classification) {
     CHECK(r[2].graph == GraphKind::Point3D && r[2].pieces[0].pz == 3);
     CHECK(r[3].graph == GraphKind::Parametric3D);
     CHECK_NEAR(evaluate(r[3].pieces[0].h, 0, 0, 1.5), 1.5, 0);
-    CHECK(r[4].kind == RowKind::Error);            // implicit 3D: not yet
-    CHECK(r[5].graph == GraphKind::ExplicitY);     // 2D curves still work (drawn on the floor)
+    CHECK(r[4].graph == GraphKind::Implicit3D);    // implicit surfaces (1.3.0)
+    CHECK(r[5].graph == GraphKind::Implicit3D);    // y = x is a plane in 3D, as in Desmos 3D
     CHECK(r[6].kind == RowKind::Slider);
     CHECK_NEAR(evaluate(r[7].pieces[0].f, 2, 0), 4, 0);
     // In 2D mode, z stays an ordinary variable.

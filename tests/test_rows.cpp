@@ -184,12 +184,12 @@ TEST(rows_fraction_display) {
 TEST(rows_showcase_save_load_roundtrip) {
     App& a = fresh();
     std::string err;
-    std::string fixture = std::string(METALLIB_PATH);
-    fixture = fixture.substr(0, fixture.rfind("/build/")) + "/tests/fixtures/showcase.json";
+    std::string fixture = FIXTURES_DIR "/showcase.json";
     CHECK(a.loadFile(fixture, err));
     frame(a);
     auto& rows = L(a).rows;
     CHECK_EQ(rows.size(), size_t(8));
+    if (rows.size() != 8) return;   // the checks below index rows 0..7
     CHECK(rows[0].type == RowType::Note && rows[1].type == RowType::Folder);
     CHECK_EQ(rows[2].folderId, rows[1].id);
     CHECK(rows[5].style.line == LineStyle::Dashed);
